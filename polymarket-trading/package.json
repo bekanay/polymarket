@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
@@ -13,6 +13,8 @@
     "@privy-io/react-auth": "^3.10.0",
     "@privy-io/server-auth": "^1.32.5",
     "@safe-global/safe-core-sdk": "^3.3.5",
+    "@solana-program/system": "^0.10.0",
+    "@solana/web3.js": "^1.98.4",
     "@types/ws": "^8.18.1",
     "axios": "^1.13.2",
     "ethers": "^6.16.0",
