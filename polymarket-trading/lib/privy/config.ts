@@ -32,7 +32,9 @@ export const privyConfig: PrivyClientConfig = {
         // Logo can be added later in public/polymarket-logo.png
     },
     embeddedWallets: {
-        createOnLogin: 'users-without-wallets',
+        ethereum: {
+            createOnLogin: 'off',
+        },
     },
     defaultChain: polygonChain,
     supportedChains: [polygonChain],
