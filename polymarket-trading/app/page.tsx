@@ -1,6 +1,34 @@
 'use client';
 
-import { LoginButton, WalletInfo, DisconnectButton, ProxyWallet } from '@/components/wallet';
+import { LoginButton, WalletInfo, DisconnectButton, ProxyWallet, FundWallet } from '@/components/wallet';
+import { useProxyWallet } from '@/hooks/useProxyWallet';
+
+// Wallet Dashboard - combines ProxyWallet and FundWallet
+function WalletDashboard() {
+  const { proxyWalletAddress, hasProxyWallet, refreshBalance, refreshUsdcBalance } = useProxyWallet();
+
+  const handleFundingComplete = () => {
+    // Refresh balances after funding
+    refreshBalance();
+    refreshUsdcBalance();
+  };
+
+  return (
+    <div className="w-full max-w-md space-y-6">
+      {/* Proxy Wallet Section */}
+      <ProxyWallet showFunding={false} />
+
+      {/* Fund Wallet Section - only show if proxy wallet exists */}
+      {hasProxyWallet && (
+        <FundWallet
+          proxyWalletAddress={proxyWalletAddress}
+          onFundingComplete={handleFundingComplete}
+          onBalanceUpdate={handleFundingComplete}
+        />
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   return (
@@ -53,9 +81,9 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Proxy Wallet Section */}
-            <div className="w-full max-w-md mt-8">
-              <ProxyWallet />
+            {/* Wallet Dashboard */}
+            <div className="mt-8">
+              <WalletDashboard />
             </div>
           </div>
         </div>
@@ -63,3 +91,4 @@ export default function Home() {
     </div>
   );
 }
+

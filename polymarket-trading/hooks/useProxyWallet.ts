@@ -145,12 +145,14 @@ export function useProxyWallet(): UseProxyWalletReturn {
                         balance: formatBalance(balance, 18),
                         usdcBalance: formatBalance(usdcBalance, 6),
                         isLoading: false,
+                        error: null, // Clear any previous errors
                     }));
                 } else {
                     setState(prev => ({
                         ...prev,
                         isLoading: false,
                         proxyWalletAddress: null,
+                        error: null, // Clear any previous errors
                     }));
                 }
             } catch (error) {

@@ -1,2 +1,2 @@
-// Polymarket CLOB client and services will be added here
-export { };
+// Polymarket CLOB client and services
+export * from './clobClient';
