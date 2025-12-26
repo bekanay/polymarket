@@ -1,2 +1,5 @@
-// Market components will be added here
-export { };
+/**
+ * Market components exports
+ */
+
+export { MarketList } from './MarketList';

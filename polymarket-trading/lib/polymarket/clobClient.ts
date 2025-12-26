@@ -93,6 +93,33 @@ export interface Position {
 }
 
 /**
+ * Parse Gamma API token data into our SimplifiedMarket token format
+ */
+function parseGammaTokens(
+    outcomePrices?: string,
+    outcomes?: string,
+    clobTokenIds?: string
+): { token_id: string; outcome: string; price?: number }[] {
+    try {
+        const prices = outcomePrices ? JSON.parse(outcomePrices) : [];
+        const outcomeNames = outcomes ? JSON.parse(outcomes) : ['Yes', 'No'];
+        const tokenIds = clobTokenIds ? JSON.parse(clobTokenIds) : [];
+
+        return outcomeNames.map((outcome: string, index: number) => ({
+            token_id: tokenIds[index] || '',
+            outcome: outcome,
+            price: prices[index] ? parseFloat(prices[index]) : undefined,
+        }));
+    } catch {
+        // Fallback for simple Yes/No markets
+        return [
+            { token_id: '', outcome: 'Yes', price: undefined },
+            { token_id: '', outcome: 'No', price: undefined },
+        ];
+    }
+}
+
+/**
  * PolymarketService - Main service for interacting with Polymarket CLOB
  */
 export class PolymarketService {
@@ -159,23 +186,59 @@ export class PolymarketService {
     // ============ Market Data Methods ============
 
     /**
-     * Get all available markets
-     * @param nextCursor - Pagination cursor
+     * Get all available markets from Gamma API (has full market data including questions)
+     * @param limit - Number of markets to fetch
+     * @param offset - Pagination offset
      */
-    async getMarkets(nextCursor?: string): Promise<{
+    async getMarkets(limit: number = 100, offset: number = 0): Promise<{
         markets: SimplifiedMarket[];
         next_cursor?: string;
     }> {
-        if (!this.client) {
-            this.initializeReadOnly();
+        try {
+            // Use local API route to proxy Gamma Markets API (avoids CORS)
+            const response = await fetch(
+                `/api/markets?limit=${limit}&offset=${offset}&active=true&closed=false`,
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`Gamma API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Transform Gamma API response to our SimplifiedMarket format
+            const markets: SimplifiedMarket[] = (data || []).map((market: {
+                conditionId?: string;
+                condition_id?: string;
+                question?: string;
+                outcomePrices?: string;
+                outcomes?: string;
+                active?: boolean;
+                closed?: boolean;
+                endDate?: string;
+                clobTokenIds?: string;
+            }) => ({
+                condition_id: market.conditionId || market.condition_id || '',
+                question: market.question || 'Unknown Market',
+                tokens: parseGammaTokens(market.outcomePrices, market.outcomes, market.clobTokenIds),
+                active: market.active !== false,
+                closed: market.closed === true,
+                end_date_iso: market.endDate,
+            }));
+
+            return {
+                markets,
+                next_cursor: markets.length >= limit ? String(offset + limit) : undefined,
+            };
+        } catch (error) {
+            console.error('Error fetching markets from Gamma API:', error);
+            return { markets: [] };
         }
-
-        const response = await this.client!.getSimplifiedMarkets(nextCursor);
-
-        return {
-            markets: response.data || [],
-            next_cursor: response.next_cursor,
-        };
     }
 
     /**
