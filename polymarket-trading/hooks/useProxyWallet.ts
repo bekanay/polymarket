@@ -122,7 +122,15 @@ export function useProxyWallet(): UseProxyWalletReturn {
 
             try {
                 const service = getProxyWalletService();
-                const existingWallet = service.getProxyWallet(userAddress);
+
+                // Check localStorage first, then try to recover from chain
+                let existingWallet = service.getProxyWallet(userAddress);
+
+                if (!existingWallet) {
+                    // Try to recover from on-chain (wallet may exist but not in localStorage)
+                    console.log('Checking for existing on-chain proxy wallet...');
+                    existingWallet = await service.checkAndRecoverWallet(userAddress);
+                }
 
                 if (existingWallet) {
                     // Fetch balances for existing wallet

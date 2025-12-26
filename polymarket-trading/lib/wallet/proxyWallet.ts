@@ -99,13 +99,10 @@ export class ProxyWalletService {
     /**
      * Initialize the ProxyWalletService
      * @param providerUrl - RPC URL for the blockchain network
-     * @param chainId - Chain ID (default: 80002 for Polygon Amoy in dev, 137 for mainnet)
+     * @param chainId - Chain ID (default: 137 for Polygon Mainnet)
      */
-    constructor(providerUrl?: string, chainId?: number) {
-        // Determine chain ID - use provided, or detect from environment
-        const isProduction = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
-        const defaultChainId = isProduction ? 137 : 80002;
-        this.chainId = chainId ?? defaultChainId;
+    constructor(providerUrl?: string, chainId: number = 137) {
+        this.chainId = chainId;
 
         // Select RPC URL based on chain
         const rpcUrls: Record<number, string> = {
@@ -155,11 +152,14 @@ export class ProxyWalletService {
 
     /**
      * Generate a deterministic salt nonce from owner address
+     * Returns a numeric string to avoid BigInt conversion issues
      */
-    private generateSaltNonce(ownerAddress: string): bigint {
+    private generateSaltNonce(ownerAddress: string): string {
         // Create a deterministic salt based on owner address
         const hash = keccak256(toUtf8Bytes(`polymarket-proxy-${ownerAddress.toLowerCase()}`));
-        return BigInt(hash);
+        // Take only the first 16 hex chars (64 bits) to avoid overflow issues
+        const shortHash = hash.slice(0, 18); // "0x" + 16 hex chars
+        return BigInt(shortHash).toString();
     }
 
     /**
@@ -239,37 +239,66 @@ export class ProxyWalletService {
         // Generate deterministic salt nonce
         const saltNonce = this.generateSaltNonce(ownerAddress);
 
-        // Deploy the Safe proxy
-        const tx = await proxyFactory.createProxyWithNonce(
-            this.contracts.safeMasterCopyL2, // Use L2 Safe for Polygon
-            initializer,
-            saltNonce
-        );
-
-        if (tx.hash && onTransactionHash) {
-            onTransactionHash(tx.hash);
-        }
-
-        // Wait for transaction confirmation
-        const receipt: TransactionReceipt = await tx.wait();
-
-        // Get the proxy address from the event logs
+        let txHash: string;
         let proxyWalletAddress: string | null = null;
 
-        // Find ProxyCreation event
-        const proxyFactoryInterface = new Interface(PROXY_FACTORY_ABI);
-        for (const log of receipt.logs) {
+        try {
+            // Deploy the Safe proxy
+            const tx = await proxyFactory.createProxyWithNonce(
+                this.contracts.safeMasterCopyL2, // Use L2 Safe for Polygon
+                initializer,
+                saltNonce
+            );
+
+            txHash = tx.hash;
+
+            if (txHash && onTransactionHash) {
+                onTransactionHash(txHash);
+            }
+
+            // Try to wait for transaction using tx.wait()
+            // This may fail with Privy due to malformed response
             try {
-                const parsed = proxyFactoryInterface.parseLog({
-                    topics: log.topics as string[],
-                    data: log.data,
-                });
-                if (parsed && parsed.name === 'ProxyCreation') {
-                    proxyWalletAddress = parsed.args[0]; // proxy address is first argument
-                    break;
+                const receipt = await tx.wait();
+
+                // Find ProxyCreation event
+                const proxyFactoryInterface = new Interface(PROXY_FACTORY_ABI);
+                for (const log of receipt.logs) {
+                    try {
+                        const parsed = proxyFactoryInterface.parseLog({
+                            topics: log.topics as string[],
+                            data: log.data,
+                        });
+                        if (parsed && parsed.name === 'ProxyCreation') {
+                            proxyWalletAddress = parsed.args[0];
+                            break;
+                        }
+                    } catch {
+                        // Not a ProxyCreation event, continue
+                    }
                 }
-            } catch {
-                // Not a ProxyCreation event, continue
+            } catch (waitError) {
+                // tx.wait() failed, likely due to Privy provider issues
+                // Fall back to polling for receipt
+                console.warn('tx.wait() failed, polling for receipt:', waitError);
+                proxyWalletAddress = await this.pollForProxyAddress(txHash);
+            }
+        } catch (error) {
+            // If the error contains a transaction hash, the tx was sent but response parsing failed
+            const errorStr = String(error);
+            const hashMatch = errorStr.match(/"hash":\s*"(0x[a-fA-F0-9]{64})"/);
+
+            if (hashMatch) {
+                txHash = hashMatch[1];
+                console.warn('Transaction sent but response parsing failed, polling for receipt');
+
+                if (onTransactionHash) {
+                    onTransactionHash(txHash);
+                }
+
+                proxyWalletAddress = await this.pollForProxyAddress(txHash);
+            } else {
+                throw error;
             }
         }
 
@@ -283,8 +312,50 @@ export class ProxyWalletService {
         return {
             proxyWalletAddress,
             isNew: true,
-            transactionHash: tx.hash,
+            transactionHash: txHash!,
         };
+    }
+
+    /**
+     * Poll for transaction receipt and extract proxy address
+     * Used as fallback when tx.wait() fails due to provider issues
+     */
+    private async pollForProxyAddress(txHash: string, maxAttempts: number = 30): Promise<string | null> {
+        const proxyFactoryInterface = new Interface(PROXY_FACTORY_ABI);
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            // Wait 2 seconds between attempts
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            try {
+                const receipt = await this.provider.getTransactionReceipt(txHash);
+
+                if (receipt && receipt.status === 1) {
+                    // Transaction confirmed, find ProxyCreation event
+                    for (const log of receipt.logs) {
+                        try {
+                            const parsed = proxyFactoryInterface.parseLog({
+                                topics: log.topics as string[],
+                                data: log.data,
+                            });
+                            if (parsed && parsed.name === 'ProxyCreation') {
+                                return parsed.args[0];
+                            }
+                        } catch {
+                            // Not a ProxyCreation event, continue
+                        }
+                    }
+                } else if (receipt && receipt.status === 0) {
+                    throw new Error('Transaction failed');
+                }
+                // If receipt is null, transaction is still pending
+            } catch (error) {
+                // Ignore errors during polling, keep trying
+                console.warn(`Polling attempt ${attempt + 1} failed:`, error);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -301,6 +372,46 @@ export class ProxyWalletService {
         );
 
         return mapping?.proxyWalletAddress || null;
+    }
+
+    /**
+     * Check if a proxy wallet exists on-chain for this user (even if not in localStorage)
+     * and recover it if found
+     * @param userAddress - The user's main wallet address
+     * @returns Proxy wallet address if found on-chain, null otherwise
+     */
+    async checkAndRecoverWallet(userAddress: string): Promise<string | null> {
+        // First check localStorage
+        const stored = this.getProxyWallet(userAddress);
+        if (stored) {
+            return stored;
+        }
+
+        // Predict the address and check if deployed
+        try {
+            const predictedAddress = await this.predictProxyAddress(userAddress);
+            const isDeployed = await this.isSafeDeployed(predictedAddress);
+
+            if (isDeployed) {
+                // Wallet exists on-chain but not in localStorage - recover it
+                this.storeProxyWallet(userAddress, predictedAddress);
+                console.log('Recovered existing proxy wallet:', predictedAddress);
+                return predictedAddress;
+            }
+        } catch (error) {
+            console.error('Error checking for existing wallet:', error);
+        }
+
+        return null;
+    }
+
+    /**
+     * Manually add a proxy wallet address for a user (for recovery purposes)
+     * @param userAddress - The user's main wallet address
+     * @param proxyWalletAddress - The proxy wallet address to store
+     */
+    recoverWallet(userAddress: string, proxyWalletAddress: string): void {
+        this.storeProxyWallet(userAddress, proxyWalletAddress);
     }
 
     /**

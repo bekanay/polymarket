@@ -46,9 +46,9 @@ export const polygonAmoy = {
     },
 };
 
-// Use testnet for development, mainnet for production
-const isProduction = process.env.NODE_ENV === 'production';
-export const polygonChain = isProduction ? polygonMainnet : polygonAmoy;
+// Always use mainnet for now (user has existing wallet and funds on mainnet)
+// To switch to testnet, change this to polygonAmoy
+export const polygonChain = polygonMainnet;
 
 // Privy configuration
 export const privyConfig: PrivyClientConfig = {
