@@ -22,12 +22,25 @@ import { ethers, Contract, Provider, Signer, Interface, TransactionReceipt, kecc
 const PROXY_WALLET_STORAGE_KEY = 'polymarket_proxy_wallets';
 
 // Polygon mainnet contract addresses (Gnosis Safe v1.3.0)
-const SAFE_CONTRACTS = {
+// Safe contracts are deployed at the same addresses across most EVM chains
+const SAFE_CONTRACTS: Record<number, {
+    proxyFactory: string;
+    safeMasterCopy: string;
+    safeMasterCopyL2: string;
+    fallbackHandler: string;
+}> = {
     // Polygon Mainnet
     137: {
         proxyFactory: '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2',
         safeMasterCopy: '0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552', // L1 Safe
         safeMasterCopyL2: '0x3E5c63644E683549055b9Be8653de26E0B4CD36E', // L2 Safe (recommended for Polygon)
+        fallbackHandler: '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4',
+    },
+    // Polygon Amoy Testnet (Safe contracts deployed at same addresses)
+    80002: {
+        proxyFactory: '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2',
+        safeMasterCopy: '0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552',
+        safeMasterCopyL2: '0x3E5c63644E683549055b9Be8653de26E0B4CD36E',
         fallbackHandler: '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4',
     },
 };
@@ -86,13 +99,23 @@ export class ProxyWalletService {
     /**
      * Initialize the ProxyWalletService
      * @param providerUrl - RPC URL for the blockchain network
-     * @param chainId - Chain ID (default: 137 for Polygon)
+     * @param chainId - Chain ID (default: 80002 for Polygon Amoy in dev, 137 for mainnet)
      */
-    constructor(providerUrl?: string, chainId: number = 137) {
-        const rpcUrl = providerUrl || process.env.NEXT_PUBLIC_POLYGON_RPC_URL || 'https://polygon-rpc.com';
+    constructor(providerUrl?: string, chainId?: number) {
+        // Determine chain ID - use provided, or detect from environment
+        const isProduction = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+        const defaultChainId = isProduction ? 137 : 80002;
+        this.chainId = chainId ?? defaultChainId;
+
+        // Select RPC URL based on chain
+        const rpcUrls: Record<number, string> = {
+            137: process.env.NEXT_PUBLIC_POLYGON_RPC_URL || 'https://polygon-rpc.com',
+            80002: 'https://rpc-amoy.polygon.technology',
+        };
+        const rpcUrl = providerUrl || rpcUrls[this.chainId] || rpcUrls[137];
+
         this.provider = new ethers.JsonRpcProvider(rpcUrl);
-        this.chainId = chainId;
-        this.contracts = SAFE_CONTRACTS[137]; // Default to Polygon
+        this.contracts = SAFE_CONTRACTS[this.chainId] || SAFE_CONTRACTS[137];
     }
 
     /**
@@ -458,12 +481,12 @@ let proxyWalletServiceInstance: ProxyWalletService | null = null;
 /**
  * Get or create a singleton instance of ProxyWalletService
  * @param providerUrl - Optional RPC URL
- * @param chainId - Optional chain ID
+ * @param chainId - Optional chain ID (defaults based on NODE_ENV)
  * @returns ProxyWalletService instance
  */
 export function getProxyWalletService(
     providerUrl?: string,
-    chainId: number = 137
+    chainId?: number
 ): ProxyWalletService {
     if (!proxyWalletServiceInstance) {
         proxyWalletServiceInstance = new ProxyWalletService(providerUrl, chainId);

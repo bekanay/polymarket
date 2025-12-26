@@ -1,6 +1,6 @@
 'use client';
 
-import { LoginButton, WalletInfo, DisconnectButton } from '@/components/wallet';
+import { LoginButton, WalletInfo, DisconnectButton, ProxyWallet } from '@/components/wallet';
 
 export default function Home() {
   return (
@@ -51,6 +51,11 @@ export default function Home() {
                 <h3 className="text-white font-medium mb-1">Market & Stop Orders</h3>
                 <p className="text-sm text-gray-400">Enhanced order types</p>
               </div>
+            </div>
+
+            {/* Proxy Wallet Section */}
+            <div className="w-full max-w-md mt-8">
+              <ProxyWallet />
             </div>
           </div>
         </div>

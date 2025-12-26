@@ -1,7 +1,7 @@
 import type { PrivyClientConfig } from '@privy-io/react-auth';
 
 // Polygon Mainnet chain configuration
-export const polygonChain = {
+export const polygonMainnet = {
     id: 137,
     name: 'Polygon',
     network: 'matic',
@@ -23,6 +23,33 @@ export const polygonChain = {
     },
 };
 
+// Polygon Amoy Testnet configuration (for testing)
+export const polygonAmoy = {
+    id: 80002,
+    name: 'Polygon Amoy',
+    network: 'polygon-amoy',
+    nativeCurrency: {
+        decimals: 18,
+        name: 'MATIC',
+        symbol: 'MATIC',
+    },
+    rpcUrls: {
+        default: {
+            http: ['https://rpc-amoy.polygon.technology'],
+        },
+        public: {
+            http: ['https://rpc-amoy.polygon.technology'],
+        },
+    },
+    blockExplorers: {
+        default: { name: 'OKLink', url: 'https://www.oklink.com/amoy' },
+    },
+};
+
+// Use testnet for development, mainnet for production
+const isProduction = process.env.NODE_ENV === 'production';
+export const polygonChain = isProduction ? polygonMainnet : polygonAmoy;
+
 // Privy configuration
 export const privyConfig: PrivyClientConfig = {
     loginMethods: ['email', 'wallet', 'google'],
@@ -33,7 +60,7 @@ export const privyConfig: PrivyClientConfig = {
     },
     embeddedWallets: {
         ethereum: {
-            createOnLogin: 'off',
+            createOnLogin: 'users-without-wallets',
         },
     },
     defaultChain: polygonChain,
