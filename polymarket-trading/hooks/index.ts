@@ -1,2 +1,5 @@
-// Custom React hooks will be added here
-export { };
+/**
+ * Custom React hooks exports
+ */
+
+export { useProxyWallet } from './useProxyWallet';
