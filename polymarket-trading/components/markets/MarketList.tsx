@@ -8,6 +8,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useMarkets } from '@/hooks/useMarkets';
 import type { SimplifiedMarket } from '@/lib/polymarket';
 
@@ -15,6 +16,7 @@ interface MarketListProps {
     onSelectMarket?: (market: SimplifiedMarket) => void;
     selectedMarketId?: string;
     maxMarkets?: number;
+    enableNavigation?: boolean;
 }
 
 type MarketCategory = 'all' | 'politics' | 'crypto' | 'sports' | 'entertainment';
@@ -22,8 +24,10 @@ type MarketCategory = 'all' | 'politics' | 'crypto' | 'sports' | 'entertainment'
 export function MarketList({
     onSelectMarket,
     selectedMarketId,
-    maxMarkets = 20
+    maxMarkets = 20,
+    enableNavigation = false
 }: MarketListProps) {
+    const router = useRouter();
     const { markets, isLoading, error, loadMore, hasMore, refresh } = useMarkets();
     const [category, setCategory] = useState<MarketCategory>('all');
     const [searchQuery, setSearchQuery] = useState('');
@@ -73,6 +77,36 @@ export function MarketList({
             return `${(yesToken.price * 100).toFixed(0)}%`;
         }
         return '—';
+    };
+
+    // Format volume for display (e.g., $1.2M, $500K)
+    const formatVolume = (volume?: number): string => {
+        if (!volume || volume === 0) return '—';
+        if (volume >= 1_000_000) {
+            return `$${(volume / 1_000_000).toFixed(1)}M`;
+        }
+        if (volume >= 1_000) {
+            return `$${(volume / 1_000).toFixed(0)}K`;
+        }
+        return `$${volume.toFixed(0)}`;
+    };
+
+    // Format price change for display
+    const formatPriceChange = (change?: number): { text: string; color: string } => {
+        if (change === undefined || change === 0) {
+            return { text: '0%', color: 'text-gray-500' };
+        }
+        const sign = change > 0 ? '+' : '';
+        const color = change > 0 ? 'text-green-400' : 'text-red-400';
+        return { text: `${sign}${(change * 100).toFixed(1)}%`, color };
+    };
+
+    // Handle market selection/navigation
+    const handleMarketClick = (market: SimplifiedMarket) => {
+        if (enableNavigation) {
+            router.push(`/market/${market.condition_id}`);
+        }
+        onSelectMarket?.(market);
     };
 
     // Categories for filter buttons
@@ -149,8 +183,8 @@ export function MarketList({
                             key={cat.id}
                             onClick={() => setCategory(cat.id)}
                             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${category === cat.id
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 hover:text-white'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 hover:text-white'
                                 }`}
                         >
                             <span>{cat.emoji}</span>
@@ -172,33 +206,52 @@ export function MarketList({
                     </div>
                 ) : (
                     <div className="divide-y divide-gray-700/30">
-                        {filteredMarkets.map((market) => (
-                            <button
-                                key={market.condition_id}
-                                onClick={() => onSelectMarket?.(market)}
-                                className={`w-full p-4 text-left hover:bg-gray-700/30 transition-colors ${selectedMarketId === market.condition_id ? 'bg-indigo-900/20 border-l-2 border-indigo-500' : ''
-                                    }`}
-                            >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-white font-medium text-sm leading-snug line-clamp-2">
-                                            {market.question}
-                                        </p>
-                                        {market.end_date_iso && (
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                Ends: {new Date(market.end_date_iso).toLocaleDateString()}
+                        {filteredMarkets.map((market) => {
+                            const priceChange = formatPriceChange(market.priceChange24hr);
+                            return (
+                                <button
+                                    key={market.condition_id}
+                                    onClick={() => handleMarketClick(market)}
+                                    className={`w-full p-4 text-left hover:bg-gray-700/30 transition-colors group ${selectedMarketId === market.condition_id ? 'bg-indigo-900/20 border-l-2 border-indigo-500' : ''
+                                        }`}
+                                >
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-white font-medium text-sm leading-snug line-clamp-2 group-hover:text-indigo-300 transition-colors">
+                                                {market.question}
                                             </p>
-                                        )}
+                                            <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                                                {market.end_date_iso && (
+                                                    <span>Ends: {new Date(market.end_date_iso).toLocaleDateString()}</span>
+                                                )}
+                                                <span className="flex items-center gap-1">
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                                    </svg>
+                                                    {formatVolume(market.volume24hr)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className="text-lg font-bold text-green-400">
+                                                {getMarketPrice(market)}
+                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-xs font-medium ${priceChange.color}`}>
+                                                    {priceChange.text}
+                                                </span>
+                                                <span className="text-xs text-gray-500">24h</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="flex flex-col items-end">
-                                        <span className="text-lg font-bold text-green-400">
-                                            {getMarketPrice(market)}
-                                        </span>
-                                        <span className="text-xs text-gray-500">Yes</span>
-                                    </div>
-                                </div>
-                            </button>
-                        ))}
+                                    {enableNavigation && (
+                                        <div className="flex items-center justify-end mt-2 text-xs text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            View Market →
+                                        </div>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
             </div>

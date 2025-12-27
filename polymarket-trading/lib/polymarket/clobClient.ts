@@ -67,6 +67,11 @@ export interface SimplifiedMarket {
     active: boolean;
     closed: boolean;
     end_date_iso?: string;
+    // Volume and liquidity metrics
+    volume24hr?: number;
+    liquidity?: number;
+    // Price change (calculated from previous day)
+    priceChange24hr?: number;
 }
 
 /**
@@ -222,14 +227,36 @@ export class PolymarketService {
                 closed?: boolean;
                 endDate?: string;
                 clobTokenIds?: string;
-            }) => ({
-                condition_id: market.conditionId || market.condition_id || '',
-                question: market.question || 'Unknown Market',
-                tokens: parseGammaTokens(market.outcomePrices, market.outcomes, market.clobTokenIds),
-                active: market.active !== false,
-                closed: market.closed === true,
-                end_date_iso: market.endDate,
-            }));
+                // Volume and liquidity fields from Gamma API
+                volume24hr?: number;
+                volume?: number;
+                liquidity?: number;
+                // Price change data
+                oneDayPriceChange?: number;
+            }) => {
+                // Parse volume - Gamma API may use different field names
+                const vol24hr = market.volume24hr ?? market.volume ?? 0;
+
+                // Parse prices and calculate change
+                const tokens = parseGammaTokens(market.outcomePrices, market.outcomes, market.clobTokenIds);
+                const yesToken = tokens.find(t => t.outcome === 'Yes');
+                const currentPrice = yesToken?.price ?? 0.5;
+
+                // Price change from Gamma API or default to 0
+                const priceChange = market.oneDayPriceChange ?? 0;
+
+                return {
+                    condition_id: market.conditionId || market.condition_id || '',
+                    question: market.question || 'Unknown Market',
+                    tokens,
+                    active: market.active !== false,
+                    closed: market.closed === true,
+                    end_date_iso: market.endDate,
+                    volume24hr: vol24hr,
+                    liquidity: market.liquidity ?? 0,
+                    priceChange24hr: priceChange,
+                };
+            });
 
             return {
                 markets,

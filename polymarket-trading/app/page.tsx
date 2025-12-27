@@ -151,6 +151,7 @@ export default function Home() {
                 onSelectMarket={setSelectedMarket}
                 selectedMarketId={selectedMarket?.condition_id}
                 maxMarkets={20}
+                enableNavigation={true}
               />
             </div>
           </div>
