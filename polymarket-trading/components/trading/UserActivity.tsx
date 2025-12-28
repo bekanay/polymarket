@@ -49,11 +49,62 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
                 const userOrders = await service.getUserOrders();
                 setOrders(userOrders);
 
-                // For positions, we'd need to calculate from trades
-                // For now, use mock data for demo
-                setPositions([]);
+                // Fetch trades and calculate positions
+                const trades = await service.getUserTrades();
+                console.log('User trades:', trades);
+
+                // Calculate positions from trades
+                const positionMap = new Map<string, {
+                    tokenId: string;
+                    totalSize: number;
+                    totalCost: number;
+                    outcome: string;
+                }>();
+
+                for (const trade of trades) {
+                    const key = trade.asset_id || trade.token_id;
+                    if (!key) continue;
+
+                    const existing = positionMap.get(key) || {
+                        tokenId: key,
+                        totalSize: 0,
+                        totalCost: 0,
+                        outcome: trade.outcome || 'Yes',
+                    };
+
+                    const size = parseFloat(trade.size || '0');
+                    const price = parseFloat(trade.price || '0');
+                    const isBuy = trade.side?.toUpperCase() === 'BUY';
+
+                    existing.totalSize += isBuy ? size : -size;
+                    existing.totalCost += isBuy ? size * price : -size * price;
+
+                    positionMap.set(key, existing);
+                }
+
+                // Convert to Position array
+                const calculatedPositions: Position[] = [];
+                for (const [key, pos] of positionMap.entries()) {
+                    if (pos.totalSize > 0.001) { // Only show positions with meaningful size
+                        const avgPrice = pos.totalCost / pos.totalSize;
+                        const currentPrice = avgPrice; // Would need to fetch current price for accurate P&L
+                        calculatedPositions.push({
+                            tokenId: key,
+                            outcome: pos.outcome,
+                            size: pos.totalSize,
+                            avgPrice: avgPrice,
+                            currentPrice: currentPrice,
+                            pnl: 0, // Would need current price to calculate
+                            pnlPercent: 0,
+                        });
+                    }
+                }
+
+                setPositions(calculatedPositions);
+                console.log('Calculated positions:', calculatedPositions);
             }
         } catch (err) {
+            console.error('Error fetching user data:', err);
             setError(err instanceof Error ? err.message : 'Failed to load user data');
         } finally {
             setIsLoading(false);

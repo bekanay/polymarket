@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useOrders, Side, type OrderResult } from '@/hooks/useOrders';
+import { useApproveUSDC } from '@/hooks/useApproveUSDC';
 
 interface OrderFormProps {
     tokenId: string;
@@ -49,8 +50,15 @@ export function OrderForm({
         onOrderError: (err) => {
             setError(err);
             onOrderError?.(err);
+            // Check if it's an allowance error
+            if (err.toLowerCase().includes('allowance') || err.toLowerCase().includes('balance')) {
+                setNeedsApproval(true);
+            }
         },
     });
+
+    const { approveUSDC, isApproving, error: approvalError } = useApproveUSDC();
+    const [needsApproval, setNeedsApproval] = useState(false);
 
     // Update price when clicked from order book
     useEffect(() => {
@@ -127,8 +135,8 @@ export function OrderForm({
                 <button
                     onClick={() => setOrderType('market')}
                     className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${orderType === 'market'
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
                         }`}
                 >
                     Market
@@ -136,8 +144,8 @@ export function OrderForm({
                 <button
                     onClick={() => setOrderType('limit')}
                     className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${orderType === 'limit'
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
                         }`}
                 >
                     Limit
@@ -149,8 +157,8 @@ export function OrderForm({
                 <button
                     onClick={() => setSide('buy')}
                     className={`py-3 text-sm font-semibold rounded-lg transition-colors ${side === 'buy'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600/50'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600/50'
                         }`}
                 >
                     Buy Yes
@@ -158,8 +166,8 @@ export function OrderForm({
                 <button
                     onClick={() => setSide('sell')}
                     className={`py-3 text-sm font-semibold rounded-lg transition-colors ${side === 'sell'
-                            ? 'bg-red-600 text-white'
-                            : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600/50'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600/50'
                         }`}
                 >
                     Buy No
@@ -259,13 +267,44 @@ export function OrderForm({
                 </div>
             )}
 
+            {/* Approval Message & Button - Always show for first-time users */}
+            <div className="mb-4 p-3 bg-gray-800/50 border border-gray-700/30 rounded-lg">
+                <p className="text-xs text-gray-400 mb-2">
+                    💡 First time trading? Approve USDC before placing orders (gas-free via Privy):
+                </p>
+                <button
+                    onClick={async () => {
+                        const success = await approveUSDC();
+                        if (success) {
+                            setNeedsApproval(false);
+                            setError(null);
+                            setSuccessMessage('USDC approved! You can now place orders.');
+                        }
+                    }}
+                    disabled={isApproving}
+                    className="w-full py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white rounded-lg transition-colors"
+                >
+                    {isApproving ? (
+                        <span className="flex items-center justify-center gap-2">
+                            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Approving USDC (gas sponsored)...
+                        </span>
+                    ) : (
+                        '🔓 Approve USDC for Trading'
+                    )}
+                </button>
+                {approvalError && (
+                    <p className="text-xs text-red-400 mt-2">{approvalError}</p>
+                )}
+            </div>
+
             {/* Submit Button */}
             <button
                 onClick={handleSubmit}
                 disabled={isSubmitting || !amount}
                 className={`w-full py-3 text-sm font-semibold rounded-lg transition-colors ${side === 'buy'
-                        ? 'bg-green-600 hover:bg-green-500 disabled:bg-green-600/50'
-                        : 'bg-red-600 hover:bg-red-500 disabled:bg-red-600/50'
+                    ? 'bg-green-600 hover:bg-green-500 disabled:bg-green-600/50'
+                    : 'bg-red-600 hover:bg-red-500 disabled:bg-red-600/50'
                     } text-white disabled:cursor-not-allowed`}
             >
                 {isSubmitting ? (

@@ -117,18 +117,17 @@ export function useTrading(): UseTradingReturn {
             const signer = await ethersProvider.getSigner();
             const userAddress = await signer.getAddress();
 
-            // Get or check for proxy wallet
-            const proxyService = getProxyWalletService();
-            let proxyAddress = proxyService.getProxyWallet(userAddress);
-
-            // If no proxy wallet, try to check on-chain
-            if (!proxyAddress) {
-                proxyAddress = await proxyService.checkAndRecoverWallet(userAddress);
-            }
-
-            // Use user's main wallet if no proxy wallet
-            const funderAddress = proxyAddress || userAddress;
+            // IMPORTANT: Gnosis Safe proxy wallets we create are NOT official Polymarket proxies.
+            // Polymarket only accepts orders from:
+            // 1. User's main wallet (EOA) - SignatureType.EOA
+            // 2. Official Polymarket proxy contracts (registered on their exchange)
+            // 
+            // Our Gnosis Safe is for potential future gas sponsorship, NOT for Polymarket trading.
+            // For now, always use the user's main wallet for trading.
+            const funderAddress = userAddress;
             setProxyWalletAddress(funderAddress);
+
+            console.log('Trading initialized with user wallet:', userAddress);
 
             // Wrap signer for ethers v5 compatibility (CLOB client expects _signTypedData)
             const v5Signer = createV5CompatibleSigner(signer);

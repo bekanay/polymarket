@@ -64,9 +64,14 @@ const STOP_ORDERS_STORAGE_KEY = 'polymarket_stop_orders';
 export async function createMarketOrder(
     params: MarketOrderParams
 ): Promise<OrderResult> {
+    console.log('[Order] Creating market order:', params);
     const service = getPolymarketService();
 
+    console.log('[Order] Service authenticated:', service.isAuthenticated());
+    console.log('[Order] Service initialized:', service.isInitialized());
+
     if (!service.isAuthenticated()) {
+        console.error('[Order] FAILED: Not authenticated');
         return {
             success: false,
             error: 'Not authenticated. Please connect wallet and initialize trading.'
@@ -136,9 +141,14 @@ export async function createMarketOrder(
 export async function createLimitOrder(
     params: LimitOrderParams
 ): Promise<OrderResult> {
+    console.log('[Order] Creating limit order:', params);
     const service = getPolymarketService();
 
+    console.log('[Order] Service authenticated:', service.isAuthenticated());
+    console.log('[Order] Service initialized:', service.isInitialized());
+
     if (!service.isAuthenticated()) {
+        console.error('[Order] FAILED: Not authenticated');
         return {
             success: false,
             error: 'Not authenticated. Please connect wallet and initialize trading.'

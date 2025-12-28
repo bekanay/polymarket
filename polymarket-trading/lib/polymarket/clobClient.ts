@@ -241,15 +241,21 @@ export class PolymarketService {
             console.log('CLOB credentials saved to cache');
         }
 
+        // Determine signature type based on whether we're using a proxy wallet
+        // SignatureType.EOA (0) = signer is the maker (no proxy)
+        // SignatureType.POLY_PROXY (1) = signer is different from maker (using proxy wallet)
+        const isUsingProxy = funderAddress.toLowerCase() !== signerAddr.toLowerCase();
+        const signatureType = isUsingProxy ? SignatureType.POLY_PROXY : SignatureType.EOA;
+
+        console.log(`Initializing CLOB client: signer=${signerAddr}, funder=${funderAddress}, isProxy=${isUsingProxy}, signatureType=${signatureType}`);
+
         // Create authenticated client
-        // SignatureType 0 = Browser Wallet (MetaMask, etc)
-        // SignatureType 1 = Magic/Email Login (Privy)
         this.client = new ClobClient(
             CLOB_HOST,
             CHAIN_ID,
             signer,
             this.creds,
-            SignatureType.EOA, // Use EOA signature type for wallet
+            signatureType,
             funderAddress
         );
 
