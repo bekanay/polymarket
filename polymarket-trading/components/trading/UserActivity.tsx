@@ -117,14 +117,31 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
         return () => clearInterval(interval);
     }, [fetchUserData]);
 
+    const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
+
     const handleCancelOrder = async (orderId: string) => {
+        console.log('Canceling order:', orderId);
+        setCancelingOrderId(orderId);
+        setError(null);
+
         try {
             const service = getPolymarketService();
-            await service.cancelOrder(orderId);
-            // Refresh orders
-            fetchUserData();
+            console.log('Service authenticated:', service.isAuthenticated());
+
+            const success = await service.cancelOrder(orderId);
+            console.log('Cancel result:', success);
+
+            if (success) {
+                // Refresh orders
+                await fetchUserData();
+            } else {
+                setError('Failed to cancel order');
+            }
         } catch (err) {
+            console.error('Error canceling order:', err);
             setError(err instanceof Error ? err.message : 'Failed to cancel order');
+        } finally {
+            setCancelingOrderId(null);
         }
     };
 
@@ -221,9 +238,17 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
                                     </div>
                                     <button
                                         onClick={() => handleCancelOrder(order.id)}
-                                        className="px-2 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"
+                                        disabled={cancelingOrderId === order.id}
+                                        className="px-2 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        Cancel
+                                        {cancelingOrderId === order.id ? (
+                                            <span className="flex items-center gap-1">
+                                                <div className="w-3 h-3 border border-red-400 border-t-transparent rounded-full animate-spin" />
+                                                Canceling...
+                                            </span>
+                                        ) : (
+                                            'Cancel'
+                                        )}
                                     </button>
                                 </div>
                             ))}
