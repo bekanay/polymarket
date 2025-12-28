@@ -95,8 +95,8 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
                 <button
                     onClick={() => setActiveTab('orders')}
                     className={`pb-2 text-sm font-medium transition-colors relative ${activeTab === 'orders'
-                            ? 'text-white'
-                            : 'text-gray-500 hover:text-gray-300'
+                        ? 'text-white'
+                        : 'text-gray-500 hover:text-gray-300'
                         }`}
                 >
                     Open Orders
@@ -112,8 +112,8 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
                 <button
                     onClick={() => setActiveTab('positions')}
                     className={`pb-2 text-sm font-medium transition-colors relative ${activeTab === 'positions'
-                            ? 'text-white'
-                            : 'text-gray-500 hover:text-gray-300'
+                        ? 'text-white'
+                        : 'text-gray-500 hover:text-gray-300'
                         }`}
                 >
                     Positions
@@ -157,12 +157,12 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${order.side === 'BUY'
-                                                    ? 'bg-green-900/50 text-green-400'
-                                                    : 'bg-red-900/50 text-red-400'
+                                                ? 'bg-green-900/50 text-green-400'
+                                                : 'bg-red-900/50 text-red-400'
                                                 }`}>
                                                 {order.side}
                                             </span>
-                                            <span className="text-sm text-white">{parseFloat(order.size).toFixed(2)} shares</span>
+                                            <span className="text-sm text-white">{parseFloat(order.original_size).toFixed(2)} shares</span>
                                         </div>
                                         <p className="text-xs text-gray-500 mt-0.5">
                                             @ {(parseFloat(order.price) * 100).toFixed(1)}¢
@@ -198,8 +198,8 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${position.outcome === 'Yes'
-                                                    ? 'bg-green-900/50 text-green-400'
-                                                    : 'bg-red-900/50 text-red-400'
+                                                ? 'bg-green-900/50 text-green-400'
+                                                : 'bg-red-900/50 text-red-400'
                                                 }`}>
                                                 {position.outcome}
                                             </span>

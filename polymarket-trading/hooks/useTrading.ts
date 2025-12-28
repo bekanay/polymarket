@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { getPolymarketService } from '@/lib/polymarket';
@@ -65,20 +65,48 @@ export function useTrading(): UseTradingReturn {
     const [error, setError] = useState<string | null>(null);
     const [proxyWalletAddress, setProxyWalletAddress] = useState<string | null>(null);
 
+    // Ref to prevent multiple initialization attempts
+    const initializationAttempted = useRef(false);
+
     const initializeTrading = useCallback(async () => {
+        // Prevent duplicate initialization
+        if (initializationAttempted.current || isInitializing) {
+            console.log('Initialization already in progress or completed, skipping...');
+            return;
+        }
+
         if (!authenticated || !wallets.length) {
             setError('Please connect your wallet first');
             return;
         }
 
+        // Find embedded wallet (created by Privy for Google/email login)
         const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
-        const connectedWallet = embeddedWallet || wallets[0];
+
+        // Check if user logged in via social (Google, email) or via external wallet
+        const linkedWallet = user?.linkedAccounts?.find(a => a.type === 'wallet');
+        const loggedInWithExternalWallet = linkedWallet && linkedWallet.walletClientType !== 'privy';
+
+        // If user logged in with Google/email, ONLY use embedded wallet
+        // If user logged in with MetaMask, use that wallet
+        let connectedWallet;
+        if (loggedInWithExternalWallet) {
+            // User logged in with MetaMask or other external wallet
+            connectedWallet = wallets.find(w => w.walletClientType !== 'privy') || embeddedWallet;
+        } else {
+            // User logged in with Google/email - use embedded wallet only
+            connectedWallet = embeddedWallet;
+        }
 
         if (!connectedWallet) {
-            setError('No wallet available');
+            setError('No wallet available. Please try logging in again.');
             return;
         }
 
+        console.log('Using wallet type:', connectedWallet.walletClientType);
+
+        // Mark initialization as attempted
+        initializationAttempted.current = true;
         setIsInitializing(true);
         setError(null);
 
@@ -114,17 +142,19 @@ export function useTrading(): UseTradingReturn {
         } catch (err) {
             console.error('Failed to initialize trading:', err);
             setError(err instanceof Error ? err.message : 'Failed to initialize trading');
+            // Reset flag to allow retry
+            initializationAttempted.current = false;
         } finally {
             setIsInitializing(false);
         }
-    }, [authenticated, wallets]);
+    }, [authenticated, wallets, isInitializing]);
 
-    // Auto-initialize when authenticated
+    // Auto-initialize when authenticated (only once)
     useEffect(() => {
-        if (authenticated && wallets.length > 0 && !isInitialized && !isInitializing) {
+        if (authenticated && wallets.length > 0 && !isInitialized && !initializationAttempted.current) {
             initializeTrading();
         }
-    }, [authenticated, wallets, isInitialized, isInitializing, initializeTrading]);
+    }, [authenticated, wallets, isInitialized, initializeTrading]);
 
     return {
         isInitialized,

@@ -124,6 +124,62 @@ function parseGammaTokens(
     }
 }
 
+// Storage key for API credentials
+const CLOB_CREDS_STORAGE_KEY = 'polymarket_clob_credentials';
+
+/**
+ * Save CLOB credentials to localStorage
+ */
+function saveCredentials(address: string, creds: ApiKeyCreds): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        const stored = localStorage.getItem(CLOB_CREDS_STORAGE_KEY);
+        const allCreds = stored ? JSON.parse(stored) : {};
+        allCreds[address.toLowerCase()] = {
+            ...creds,
+            savedAt: Date.now(),
+        };
+        localStorage.setItem(CLOB_CREDS_STORAGE_KEY, JSON.stringify(allCreds));
+    } catch (e) {
+        console.warn('Failed to save CLOB credentials:', e);
+    }
+}
+
+/**
+ * Load CLOB credentials from localStorage
+ * Returns null if not found or expired (30 days)
+ */
+function loadCredentials(address: string): ApiKeyCreds | null {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const stored = localStorage.getItem(CLOB_CREDS_STORAGE_KEY);
+        if (!stored) return null;
+
+        const allCreds = JSON.parse(stored);
+        const creds = allCreds[address.toLowerCase()];
+
+        if (!creds) return null;
+
+        // Check if credentials are expired (30 days)
+        const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+        if (creds.savedAt && Date.now() - creds.savedAt > thirtyDaysMs) {
+            // Expired, remove them
+            delete allCreds[address.toLowerCase()];
+            localStorage.setItem(CLOB_CREDS_STORAGE_KEY, JSON.stringify(allCreds));
+            return null;
+        }
+
+        // Return credentials without savedAt
+        const { savedAt, ...apiCreds } = creds;
+        return apiCreds as ApiKeyCreds;
+    } catch (e) {
+        console.warn('Failed to load CLOB credentials:', e);
+        return null;
+    }
+}
+
 /**
  * PolymarketService - Main service for interacting with Polymarket CLOB
  */
@@ -133,6 +189,7 @@ export class PolymarketService {
     private signer: Wallet | JsonRpcSigner | null = null;
     private funderAddress: string | null = null;
     private initialized: boolean = false;
+    private signerAddress: string | null = null;
 
     /**
      * Initialize the service with read-only access (no signer)
@@ -152,12 +209,37 @@ export class PolymarketService {
         signer: Wallet | JsonRpcSigner,
         funderAddress: string
     ): Promise<void> {
+        // Get signer address
+        const signerAddr = await signer.getAddress();
+
+        // Skip if already authenticated with same signer and funder
+        if (this.isAuthenticated() &&
+            this.signerAddress === signerAddr &&
+            this.funderAddress === funderAddress) {
+            console.log('Trading service already initialized, skipping...');
+            return;
+        }
+
         this.signer = signer;
         this.funderAddress = funderAddress;
+        this.signerAddress = signerAddr;
 
-        // Create or derive API credentials
-        const tempClient = new ClobClient(CLOB_HOST, CHAIN_ID, signer);
-        this.creds = await tempClient.createOrDeriveApiKey();
+        // Try to load cached credentials first
+        let cachedCreds = loadCredentials(signerAddr);
+
+        if (cachedCreds) {
+            console.log('Using cached CLOB credentials');
+            this.creds = cachedCreds;
+        } else {
+            console.log('Creating new CLOB API credentials (signature required)...');
+            // Create or derive API credentials (requires signature)
+            const tempClient = new ClobClient(CLOB_HOST, CHAIN_ID, signer);
+            this.creds = await tempClient.createOrDeriveApiKey();
+
+            // Save credentials for future use
+            saveCredentials(signerAddr, this.creds);
+            console.log('CLOB credentials saved to cache');
+        }
 
         // Create authenticated client
         // SignatureType 0 = Browser Wallet (MetaMask, etc)

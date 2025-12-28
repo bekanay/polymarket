@@ -54,7 +54,7 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
 
             const points: PricePoint[] = history.map((point) => ({
                 timestamp: point.t * 1000,
-                price: parseFloat(point.p) * 100, // Convert to percentage
+                price: Number(point.p) * 100, // Convert to percentage
                 date: new Date(point.t * 1000).toLocaleString(),
             }));
 
@@ -141,8 +141,8 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
                             key={range}
                             onClick={() => setTimeRange(range)}
                             className={`px-2 py-1 text-xs rounded transition-colors ${timeRange === range
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
                                 }`}
                         >
                             {range}
@@ -201,7 +201,7 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
                                     fontSize: '12px',
                                 }}
                                 labelFormatter={(ts) => new Date(ts).toLocaleString()}
-                                formatter={(value: number) => [`${value.toFixed(1)}%`, 'Price']}
+                                formatter={(value: number | undefined) => [`${(value ?? 0).toFixed(1)}%`, 'Price']}
                             />
                             <Area
                                 type="monotone"
