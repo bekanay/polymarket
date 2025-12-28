@@ -62,7 +62,8 @@ export function UserActivity({ tokenId, marketId }: UserActivityProps) {
                 }>();
 
                 for (const trade of trades) {
-                    const key = trade.asset_id || trade.token_id;
+                    // Use asset_id as the primary key, fallback to tokenID if available
+                    const key = trade.asset_id || (trade as unknown as { tokenID?: string }).tokenID;
                     if (!key) continue;
 
                     const existing = positionMap.get(key) || {

@@ -12,7 +12,8 @@ import { useOrders, Side, type OrderResult } from '@/hooks/useOrders';
 import { useApproveUSDC } from '@/hooks/useApproveUSDC';
 
 interface OrderFormProps {
-    tokenId: string;
+    tokenId: string;         // YES token ID
+    noTokenId?: string;      // NO token ID (for Buy No orders)
     currentPrice?: number;
     initialPrice?: number;
     initialSide?: 'buy' | 'sell';
@@ -24,6 +25,7 @@ type OrderType = 'market' | 'limit';
 
 export function OrderForm({
     tokenId,
+    noTokenId,
     currentPrice = 0.5,
     initialPrice,
     initialSide,
@@ -90,12 +92,15 @@ export function OrderForm({
             return;
         }
 
-        const orderSide = side === 'buy' ? Side.BUY : Side.SELL;
+        // Buy Yes = BUY on YES token
+        // Buy No = BUY on NO token (NOT sell on YES!)
+        const targetTokenId = side === 'buy' ? tokenId : (noTokenId || tokenId);
+        const orderSide = Side.BUY; // Always BUY - Buy Yes/No are both buying different tokens
 
         if (orderType === 'market') {
             // Market order - execute at current price
             await placeMarketOrder({
-                tokenId,
+                tokenId: targetTokenId,
                 side: orderSide,
                 amount: amountNum,
             });
@@ -111,13 +116,13 @@ export function OrderForm({
             const size = amountNum / price; // Calculate shares
 
             await placeLimitOrder({
-                tokenId,
+                tokenId: targetTokenId,
                 side: orderSide,
                 price,
                 size,
             });
         }
-    }, [amount, limitPrice, orderType, side, tokenId, placeMarketOrder, placeLimitOrder]);
+    }, [amount, limitPrice, orderType, side, tokenId, noTokenId, placeMarketOrder, placeLimitOrder]);
 
     // Calculate estimated cost/proceeds
     const amountNum = parseFloat(amount) || 0;

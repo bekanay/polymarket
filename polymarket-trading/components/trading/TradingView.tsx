@@ -133,6 +133,7 @@ export function TradingView({ market }: TradingViewProps) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <OrderForm
                     tokenId={tokenId}
+                    noTokenId={noToken?.token_id || ''}
                     currentPrice={currentPrice}
                     initialPrice={selectedPrice}
                     initialSide={selectedSide}
