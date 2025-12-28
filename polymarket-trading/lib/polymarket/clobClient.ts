@@ -126,6 +126,7 @@ function parseGammaTokens(
 
 // Storage key for API credentials
 const CLOB_CREDS_STORAGE_KEY = 'polymarket_clob_credentials';
+const PROXY_WALLETS_STORAGE_KEY = 'polymarket_proxy_wallets';
 
 /**
  * Save CLOB credentials to localStorage
@@ -143,6 +144,25 @@ function saveCredentials(address: string, creds: ApiKeyCreds): void {
         localStorage.setItem(CLOB_CREDS_STORAGE_KEY, JSON.stringify(allCreds));
     } catch (e) {
         console.warn('Failed to save CLOB credentials:', e);
+    }
+}
+
+/**
+ * Clear all stored credentials and reset service state
+ * Call this on logout/disconnect for security
+ */
+export function clearAllCredentials(): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.removeItem(CLOB_CREDS_STORAGE_KEY);
+        localStorage.removeItem(PROXY_WALLETS_STORAGE_KEY);
+        console.log('All CLOB credentials cleared');
+
+        // Reset the singleton service
+        resetPolymarketService();
+    } catch (e) {
+        console.warn('Failed to clear credentials:', e);
     }
 }
 
@@ -234,7 +254,29 @@ export class PolymarketService {
             console.log('Creating new CLOB API credentials (signature required)...');
             // Create or derive API credentials (requires signature)
             const tempClient = new ClobClient(CLOB_HOST, CHAIN_ID, signer);
-            this.creds = await tempClient.createOrDeriveApiKey();
+
+            // Retry logic - first attempt sometimes fails on new wallets
+            let retries = 3;
+            let lastError: Error | null = null;
+
+            while (retries > 0) {
+                try {
+                    this.creds = await tempClient.createOrDeriveApiKey();
+                    break; // Success, exit loop
+                } catch (err) {
+                    lastError = err instanceof Error ? err : new Error(String(err));
+                    console.warn(`API key creation failed (${retries} retries left):`, lastError.message);
+                    retries--;
+                    if (retries > 0) {
+                        // Wait before retry (longer delay for API to settle)
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                }
+            }
+
+            if (!this.creds) {
+                throw lastError || new Error('Failed to create API credentials after retries');
+            }
 
             // Save credentials for future use
             saveCredentials(signerAddr, this.creds);
@@ -514,11 +556,21 @@ export class PolymarketService {
                 success: true,
                 orderId: response.orderID || response.order_id,
             };
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('Error creating order:', error);
+            // Extract error message from axios response if available
+            let errorMessage = 'Unknown error';
+            if (error && typeof error === 'object') {
+                const axiosError = error as { response?: { data?: { error?: string } }; message?: string };
+                if (axiosError.response?.data?.error) {
+                    errorMessage = axiosError.response.data.error;
+                } else if (axiosError.message) {
+                    errorMessage = axiosError.message;
+                }
+            }
             return {
                 success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
+                error: errorMessage,
             };
         }
     }
@@ -543,6 +595,7 @@ export class PolymarketService {
         }
 
         try {
+            console.log('[CLOB] Calling createAndPostMarketOrder...');
             const response = await this.client!.createAndPostMarketOrder(
                 {
                     tokenID: tokenId,
@@ -553,15 +606,37 @@ export class PolymarketService {
                 OrderType.FOK // Fill or Kill for market orders
             );
 
+            console.log('[CLOB] createAndPostMarketOrder response:', response);
+
+            // Check if response indicates an error
+            if (response && typeof response === 'object' && 'error' in response) {
+                console.log('[CLOB] Response contains error:', response.error);
+                return {
+                    success: false,
+                    error: String(response.error) || 'Order failed',
+                };
+            }
+
             return {
                 success: true,
-                orderId: response.orderID || response.order_id,
+                orderId: response?.orderID || response?.order_id,
             };
-        } catch (error) {
-            console.error('Error creating market order:', error);
+        } catch (error: unknown) {
+            console.error('[CLOB] createMarketOrder caught error:', error);
+            // Extract error message from axios response if available
+            let errorMessage = 'Unknown error';
+            if (error && typeof error === 'object') {
+                const axiosError = error as { response?: { data?: { error?: string } }; message?: string };
+                if (axiosError.response?.data?.error) {
+                    errorMessage = axiosError.response.data.error;
+                } else if (axiosError.message) {
+                    errorMessage = axiosError.message;
+                }
+            }
+            console.log('[CLOB] Extracted error message:', errorMessage);
             return {
                 success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
+                error: errorMessage,
             };
         }
     }

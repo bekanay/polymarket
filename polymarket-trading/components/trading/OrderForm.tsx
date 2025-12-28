@@ -48,6 +48,7 @@ export function OrderForm({
             setTimeout(() => setSuccessMessage(null), 5000);
         },
         onOrderError: (err) => {
+            console.log('[OrderForm] Error received:', err);
             setError(err);
             onOrderError?.(err);
             // Check if it's an allowance error
