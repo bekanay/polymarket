@@ -46,6 +46,29 @@ export const polygonAmoy = {
     },
 };
 
+// Ethereum Mainnet (needed for Privy on-ramp)
+export const ethereumMainnet = {
+    id: 1,
+    name: 'Ethereum',
+    network: 'ethereum',
+    nativeCurrency: {
+        decimals: 18,
+        name: 'Ether',
+        symbol: 'ETH',
+    },
+    rpcUrls: {
+        default: {
+            http: ['https://eth.llamarpc.com'],
+        },
+        public: {
+            http: ['https://eth.llamarpc.com'],
+        },
+    },
+    blockExplorers: {
+        default: { name: 'Etherscan', url: 'https://etherscan.io' },
+    },
+};
+
 // Always use mainnet for now (user has existing wallet and funds on mainnet)
 // To switch to testnet, change this to polygonAmoy
 export const polygonChain = polygonMainnet;
@@ -64,7 +87,8 @@ export const privyConfig: PrivyClientConfig = {
         },
     },
     defaultChain: polygonChain,
-    supportedChains: [polygonChain],
+    // Include Ethereum for on-ramp, Polygon for trading
+    supportedChains: [polygonChain, ethereumMainnet],
 };
 
 // Export the app ID for use in provider

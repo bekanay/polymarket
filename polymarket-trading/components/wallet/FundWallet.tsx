@@ -229,7 +229,7 @@ export function FundWallet({
                 {/* Fund Options - always visible */}
                 <div className="mt-3 flex gap-2">
                     <button
-                        onClick={() => fundWallet({ address: embeddedWallet.address })}
+                        onClick={() => fundWallet({ address: embeddedWallet.address, options: { defaultFundingMethod: 'card' } })}
                         className="flex-1 py-2 px-3 bg-gradient-to-r from-green-600 to-emerald-600 
                                    hover:from-green-500 hover:to-emerald-500 text-white text-sm font-medium 
                                    rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
