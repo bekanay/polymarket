@@ -8,7 +8,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { usePrivy, useWallets, useFundWallet } from '@privy-io/react-auth';
 import { BrowserProvider, Contract, parseUnits, formatUnits } from 'ethers';
 
 // USDC contract address on Polygon Mainnet
@@ -38,6 +38,7 @@ export function FundWallet({
 }: FundWalletProps) {
     const { authenticated, ready } = usePrivy();
     const { wallets } = useWallets();
+    const { fundWallet } = useFundWallet();
 
     const [amount, setAmount] = useState<string>('');
     const [embeddedBalance, setEmbeddedBalance] = useState<string>('0');
@@ -224,6 +225,31 @@ export function FundWallet({
                 <p className="text-xs text-gray-500 mt-1 font-mono">
                     {embeddedWallet.address.slice(0, 10)}...{embeddedWallet.address.slice(-8)}
                 </p>
+
+                {/* Fund Options - always visible */}
+                <div className="mt-3 flex gap-2">
+                    <button
+                        onClick={() => fundWallet({ address: embeddedWallet.address })}
+                        className="flex-1 py-2 px-3 bg-gradient-to-r from-green-600 to-emerald-600 
+                                   hover:from-green-500 hover:to-emerald-500 text-white text-sm font-medium 
+                                   rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+                    >
+                        <span>💵</span>
+                        Buy USDC
+                    </button>
+                    <button
+                        onClick={() => {
+                            navigator.clipboard.writeText(embeddedWallet.address);
+                            alert('Address copied!');
+                        }}
+                        className="py-2 px-3 bg-gray-700/50 hover:bg-gray-700 
+                                   text-white text-sm rounded-lg transition-colors 
+                                   flex items-center justify-center gap-2"
+                    >
+                        <span>📋</span>
+                        Copy
+                    </button>
+                </div>
             </div>
 
             {/* Amount Input */}

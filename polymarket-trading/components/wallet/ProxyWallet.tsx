@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useProxyWallet } from '@/hooks/useProxyWallet';
+import { FundWallet } from './FundWallet';
 
 interface ProxyWalletProps {
     showFunding?: boolean;
@@ -230,25 +231,14 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
                     </div>
                 )}
 
-                {/* Funding Section */}
-                {showFunding && (
+                {/* Funding Section - Transfer USDC from embedded wallet to proxy */}
+                {showFunding && proxyWalletAddress && (
                     <div className="border-t border-gray-700/50 pt-4 mt-2">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-sm font-medium text-white">Fund Wallet</span>
-                            <span className="text-xs text-gray-500">Send USDC to trade</span>
-                        </div>
-                        <div className="bg-gray-900/30 rounded-lg p-3 border border-dashed border-gray-600">
-                            <p className="text-xs text-gray-400 text-center">
-                                Send MATIC or USDC to your proxy wallet address above to start trading.
-                            </p>
-                            <button
-                                onClick={() => copyToClipboard(proxyWalletAddress!)}
-                                className="w-full mt-3 py-2 px-3 bg-gray-700/50 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
-                            >
-                                <span>📋</span>
-                                Copy Address
-                            </button>
-                        </div>
+                        <FundWallet
+                            proxyWalletAddress={proxyWalletAddress}
+                            onFundingComplete={() => refreshUsdcBalance()}
+                            onBalanceUpdate={() => refreshUsdcBalance()}
+                        />
                     </div>
                 )}
 
