@@ -70,11 +70,16 @@ export function MarketList({
         return filtered.slice(0, maxMarkets);
     }, [markets, category, searchQuery, maxMarkets]);
 
-    // Get price display for a market
+    // Get price display for a market (show as $ price like Polymarket)
     const getMarketPrice = (market: SimplifiedMarket): string => {
         const yesToken = market.tokens?.find(t => t.outcome === 'Yes');
-        if (yesToken?.price !== undefined) {
-            return `${(yesToken.price * 100).toFixed(0)}%`;
+        if (yesToken?.price !== undefined && yesToken.price > 0) {
+            const price = yesToken.price;
+            // Show as cents (e.g., 45¢ for $0.45, or <1¢ for very low)
+            if (price < 0.01) {
+                return `<1¢`;
+            }
+            return `${(price * 100).toFixed(0)}¢`;
         }
         return '—';
     };

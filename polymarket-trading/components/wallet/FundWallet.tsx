@@ -8,11 +8,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { usePrivy, useWallets, useFundWallet } from '@privy-io/react-auth';
-import { BrowserProvider, Contract, parseUnits, formatUnits } from 'ethers';
+import { usePrivy, useWallets, useFundWallet, useSendTransaction } from '@privy-io/react-auth';
+import { BrowserProvider, Contract, Interface, parseUnits, formatUnits } from 'ethers';
 
-// USDC contract address on Polygon Mainnet
-const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+// Native USDC on Polygon (Polymarket uses this, NOT USDC.e)
+const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 const USDC_DECIMALS = 6;
 
 // Minimal ERC20 ABI for transfers
@@ -39,6 +39,7 @@ export function FundWallet({
     const { authenticated, ready } = usePrivy();
     const { wallets } = useWallets();
     const { fundWallet } = useFundWallet();
+    const { sendTransaction } = useSendTransaction();
 
     const [amount, setAmount] = useState<string>('');
     const [embeddedBalance, setEmbeddedBalance] = useState<string>('0');
@@ -100,7 +101,7 @@ export function FundWallet({
         return !isNaN(numAmount) && numAmount > 0 && numAmount <= numBalance;
     };
 
-    // Handle transfer
+    // Handle transfer using Privy's sendTransaction (with gas sponsorship)
     const handleTransfer = async () => {
         if (!embeddedWallet || !proxyWalletAddress || !isValidAmount()) {
             return;
@@ -111,34 +112,30 @@ export function FundWallet({
         setTxHash(null);
 
         try {
-            // Get signer from embedded wallet
-            const ethereumProvider = await embeddedWallet.getEthereumProvider();
-            const provider = new BrowserProvider(ethereumProvider);
-            const signer = await provider.getSigner();
-
-            // Create USDC contract instance
-            const usdcContract = new Contract(USDC_ADDRESS, ERC20_ABI, signer);
-
             // Parse amount to USDC units (6 decimals)
             const amountInUnits = parseUnits(amount, USDC_DECIMALS);
 
+            // Encode transfer function call
+            const iface = new Interface(ERC20_ABI);
+            const data = iface.encodeFunctionData('transfer', [proxyWalletAddress, amountInUnits]);
+
             setStatus('pending');
 
-            // Execute transfer
-            // Privy will sponsor gas if configured
-            const tx = await usdcContract.transfer(proxyWalletAddress, amountInUnits);
+            // Use Privy's sendTransaction for gas sponsorship
+            const txReceipt = await sendTransaction({
+                to: USDC_ADDRESS,
+                data: data,
+                chainId: 137, // Polygon
+            });
 
-            setTxHash(tx.hash);
-
-            // Wait for confirmation
-            await tx.wait();
-
+            const hash = txReceipt.hash;
+            setTxHash(hash);
             setStatus('success');
             setAmount('');
 
             // Callback on success
             if (onFundingComplete) {
-                onFundingComplete(tx.hash);
+                onFundingComplete(hash);
             }
 
             // Refresh balances

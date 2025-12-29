@@ -101,21 +101,51 @@ export interface Position {
  * Parse Gamma API token data into our SimplifiedMarket token format
  */
 function parseGammaTokens(
-    outcomePrices?: string,
-    outcomes?: string,
-    clobTokenIds?: string
+    outcomePrices?: string | number[],
+    outcomes?: string | string[],
+    clobTokenIds?: string | string[]
 ): { token_id: string; outcome: string; price?: number }[] {
     try {
-        const prices = outcomePrices ? JSON.parse(outcomePrices) : [];
-        const outcomeNames = outcomes ? JSON.parse(outcomes) : ['Yes', 'No'];
-        const tokenIds = clobTokenIds ? JSON.parse(clobTokenIds) : [];
+        // Handle both JSON string and array formats
+        let prices: (string | number)[] = [];
+        if (typeof outcomePrices === 'string') {
+            prices = JSON.parse(outcomePrices);
+        } else if (Array.isArray(outcomePrices)) {
+            prices = outcomePrices;
+        }
 
-        return outcomeNames.map((outcome: string, index: number) => ({
-            token_id: tokenIds[index] || '',
-            outcome: outcome,
-            price: prices[index] ? parseFloat(prices[index]) : undefined,
-        }));
-    } catch {
+        let outcomeNames: string[] = ['Yes', 'No'];
+        if (typeof outcomes === 'string') {
+            outcomeNames = JSON.parse(outcomes);
+        } else if (Array.isArray(outcomes)) {
+            outcomeNames = outcomes;
+        }
+
+        let tokenIds: string[] = [];
+        if (typeof clobTokenIds === 'string') {
+            tokenIds = JSON.parse(clobTokenIds);
+        } else if (Array.isArray(clobTokenIds)) {
+            tokenIds = clobTokenIds;
+        }
+
+        return outcomeNames.map((outcome: string, index: number) => {
+            const rawPrice = prices[index];
+            let price: number | undefined;
+
+            if (rawPrice !== undefined && rawPrice !== null) {
+                price = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice);
+                // Ensure valid number
+                if (isNaN(price)) price = undefined;
+            }
+
+            return {
+                token_id: tokenIds[index] || '',
+                outcome: outcome,
+                price: price,
+            };
+        });
+    } catch (err) {
+        console.error('Error parsing Gamma tokens:', err, { outcomePrices, outcomes, clobTokenIds });
         // Fallback for simple Yes/No markets
         return [
             { token_id: '', outcome: 'Yes', price: undefined },
@@ -345,6 +375,11 @@ export class PolymarketService {
             }
 
             const data = await response.json();
+
+            // Debug: Log first market structure
+            if (data && data.length > 0) {
+                console.log('Gamma API first market sample:', JSON.stringify(data[0], null, 2).substring(0, 1000));
+            }
 
             // Transform Gamma API response to our SimplifiedMarket format
             const markets: SimplifiedMarket[] = (data || []).map((market: {
