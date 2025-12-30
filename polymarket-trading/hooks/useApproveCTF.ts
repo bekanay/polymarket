@@ -3,14 +3,14 @@
  * 
  * Handles Conditional Token approval for Polymarket exchange.
  * Required for SELLING positions (Yes/No tokens).
- * Uses wallet provider directly for the transaction.
+ * Uses Privy's gas sponsorship for transaction fees.
  */
 
 'use client';
 
 import { useState, useCallback } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { ethers, Interface, BrowserProvider } from 'ethers';
+import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
+import { ethers, Interface } from 'ethers';
 
 // Polymarket Conditional Token Framework (CTF) contract on Polygon
 // This is the ERC-1155 contract that holds Yes/No tokens
@@ -39,6 +39,7 @@ interface UseApproveCTFReturn {
 export function useApproveCTF(): UseApproveCTFReturn {
     const { authenticated } = usePrivy();
     const { wallets } = useWallets();
+    const { sendTransaction } = useSendTransaction();
     const [isApproving, setIsApproving] = useState(false);
     const [isApproved, setIsApproved] = useState<boolean | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -76,7 +77,7 @@ export function useApproveCTF(): UseApproveCTFReturn {
     }, []);
 
     /**
-     * Approve CTF tokens for Polymarket exchange via wallet provider
+     * Approve CTF tokens for Polymarket exchange with Privy gas sponsorship
      * This enables selling of Yes/No tokens
      */
     const approveCTF = useCallback(async (): Promise<boolean> => {
@@ -85,11 +86,7 @@ export function useApproveCTF(): UseApproveCTFReturn {
             return false;
         }
 
-        // Find embedded wallet (for Google login) or first available wallet
-        const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
-        const connectedWallet = embeddedWallet || wallets[0];
-
-        if (!connectedWallet) {
+        if (wallets.length === 0) {
             setError('No wallet found. Please log in again.');
             return false;
         }
@@ -99,38 +96,39 @@ export function useApproveCTF(): UseApproveCTFReturn {
         setTxHash(null);
 
         try {
-            console.log('Approving CTF tokens for Polymarket selling...');
-            console.log('Using wallet:', connectedWallet.address, 'type:', connectedWallet.walletClientType);
+            console.log('Approving CTF tokens for Polymarket with gas sponsorship...');
 
-            // Get the wallet's Ethereum provider
-            const ethereumProvider = await connectedWallet.getEthereumProvider();
+            // Encode the setApprovalForAll function call
+            const iface = new Interface(ERC1155_ABI);
+            const callData = iface.encodeFunctionData('setApprovalForAll', [
+                POLYMARKET_EXCHANGE,
+                true
+            ]);
 
-            // Send setApprovalForAll transaction
-            console.log('Sending setApprovalForAll transaction...');
-
-            const hash = await ethereumProvider.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                    from: connectedWallet.address,
+            // Send transaction using Privy's gas sponsorship
+            const txResult = await sendTransaction(
+                {
                     to: CTF_ADDRESS,
-                    data: new Interface(ERC1155_ABI).encodeFunctionData('setApprovalForAll', [
-                        POLYMARKET_EXCHANGE,
-                        true
-                    ]),
-                }],
-            }) as string;
+                    data: callData,
+                    chainId: 137, // Polygon Mainnet
+                },
+                {
+                    // Enable gas sponsorship from Privy
+                    sponsor: true,
+                }
+            );
 
-            console.log('Approve CTF transaction sent:', hash);
-            setTxHash(hash);
+            console.log('Approve CTF transaction sent:', txResult.hash);
+            setTxHash(txResult.hash);
 
             // Wait for confirmation using public RPC
             console.log('Waiting for confirmation...');
-            const publicProvider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+            const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
 
             let receipt = null;
             for (let i = 0; i < 30; i++) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                receipt = await publicProvider.getTransactionReceipt(hash);
+                receipt = await provider.getTransactionReceipt(txResult.hash);
                 if (receipt) break;
             }
 
@@ -149,7 +147,7 @@ export function useApproveCTF(): UseApproveCTFReturn {
         } finally {
             setIsApproving(false);
         }
-    }, [authenticated, wallets]);
+    }, [authenticated, wallets, sendTransaction]);
 
     return {
         approveCTF,

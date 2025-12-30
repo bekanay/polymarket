@@ -2,14 +2,14 @@
  * useApproveUSDC Hook
  * 
  * Handles USDC approval for Polymarket exchange.
- * Uses wallet provider directly for the transaction.
+ * Uses Privy's gas sponsorship for transaction fees.
  */
 
 'use client';
 
 import { useState, useCallback } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { ethers, Interface, BrowserProvider } from 'ethers';
+import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
+import { ethers, Interface } from 'ethers';
 
 // USDC contract on Polygon
 const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -37,8 +37,9 @@ interface UseApproveUSDCReturn {
 }
 
 export function useApproveUSDC(): UseApproveUSDCReturn {
-    const { authenticated, user } = usePrivy();
+    const { authenticated } = usePrivy();
     const { wallets } = useWallets();
+    const { sendTransaction } = useSendTransaction();
     const [isApproving, setIsApproving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [txHash, setTxHash] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
     }, []);
 
     /**
-     * Approve USDC for Polymarket exchange via wallet provider
+     * Approve USDC for Polymarket exchange with Privy gas sponsorship
      */
     const approveUSDC = useCallback(async (): Promise<boolean> => {
         if (!authenticated) {
@@ -82,11 +83,7 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
             return false;
         }
 
-        // Find embedded wallet (for Google login) or first available wallet
-        const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
-        const connectedWallet = embeddedWallet || wallets[0];
-
-        if (!connectedWallet) {
+        if (wallets.length === 0) {
             setError('No wallet found. Please log in again.');
             return false;
         }
@@ -96,41 +93,39 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
         setTxHash(null);
 
         try {
-            console.log('Approving USDC for Polymarket...');
-            console.log('Using wallet:', connectedWallet.address, 'type:', connectedWallet.walletClientType);
+            console.log('Approving USDC for Polymarket with gas sponsorship...');
 
-            // Get the wallet's Ethereum provider
-            const ethereumProvider = await connectedWallet.getEthereumProvider();
-            const provider = new BrowserProvider(ethereumProvider);
-            const signer = await provider.getSigner();
+            // Encode the approve function call
+            const iface = new Interface(ERC20_ABI);
+            const callData = iface.encodeFunctionData('approve', [
+                POLYMARKET_EXCHANGE,
+                MAX_UINT256
+            ]);
 
-            // Send approve transaction using raw request to avoid ethers parsing issues
-            console.log('Sending approve transaction...');
-
-            // Use eth_sendTransaction directly to avoid parsing issues with tx.wait()
-            const txHash = await ethereumProvider.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                    from: connectedWallet.address,
+            // Send transaction using Privy's gas sponsorship
+            const txResult = await sendTransaction(
+                {
                     to: USDC_ADDRESS,
-                    data: new Interface(ERC20_ABI).encodeFunctionData('approve', [
-                        POLYMARKET_EXCHANGE,
-                        MAX_UINT256
-                    ]),
-                }],
-            }) as string;
+                    data: callData,
+                    chainId: 137, // Polygon Mainnet
+                },
+                {
+                    // Enable gas sponsorship from Privy
+                    sponsor: true,
+                }
+            );
 
-            console.log('Approve transaction sent:', txHash);
-            setTxHash(txHash);
+            console.log('Approve transaction sent:', txResult.hash);
+            setTxHash(txResult.hash);
 
             // Wait for confirmation using public RPC
             console.log('Waiting for confirmation...');
-            const publicProvider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+            const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
 
             let receipt = null;
             for (let i = 0; i < 30; i++) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                receipt = await publicProvider.getTransactionReceipt(txHash);
+                receipt = await provider.getTransactionReceipt(txResult.hash);
                 if (receipt) break;
             }
 
@@ -148,7 +143,7 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
         } finally {
             setIsApproving(false);
         }
-    }, [authenticated, wallets]);
+    }, [authenticated, wallets, sendTransaction]);
 
     return {
         approveUSDC,
