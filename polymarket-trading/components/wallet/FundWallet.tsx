@@ -11,8 +11,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { usePrivy, useWallets, useFundWallet, useSendTransaction } from '@privy-io/react-auth';
 import { BrowserProvider, Contract, Interface, parseUnits, formatUnits } from 'ethers';
 
-// Native USDC on Polygon (Polymarket uses this, NOT USDC.e)
-const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+// USDC.e (Bridged USDC) on Polygon - Polymarket uses this, NOT Native USDC!
+// Native USDC: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 (don't use this)
+const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 const USDC_DECIMALS = 6;
 
 // Minimal ERC20 ABI for transfers

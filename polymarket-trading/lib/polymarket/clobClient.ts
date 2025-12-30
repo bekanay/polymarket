@@ -348,6 +348,13 @@ export class PolymarketService {
         return this.isInitialized() && this.creds !== null;
     }
 
+    /**
+     * Get the funder address (the wallet that funds orders)
+     */
+    getFunderAddress(): string | null {
+        return this.funderAddress;
+    }
+
     // ============ Market Data Methods ============
 
     /**

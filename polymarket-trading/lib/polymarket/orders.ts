@@ -11,6 +11,42 @@ import {
     OrderType,
     type OrderBookSummary
 } from './clobClient';
+import { ethers } from 'ethers';
+
+// USDC contract on Polygon
+const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+// Polymarket CTF Exchange contract
+const POLYMARKET_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
+
+const ERC20_ABI = [
+    'function allowance(address owner, address spender) external view returns (uint256)',
+    'function balanceOf(address account) external view returns (uint256)',
+];
+
+/**
+ * Check USDC balance and allowance for a wallet
+ */
+async function checkUSDCStatus(walletAddress: string): Promise<{
+    balance: bigint;
+    allowance: bigint;
+    balanceFormatted: string;
+    allowanceFormatted: string;
+}> {
+    const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+    const usdc = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, provider);
+
+    const [balance, allowance] = await Promise.all([
+        usdc.balanceOf(walletAddress),
+        usdc.allowance(walletAddress, POLYMARKET_EXCHANGE),
+    ]);
+
+    return {
+        balance,
+        allowance,
+        balanceFormatted: (Number(balance) / 1e6).toFixed(2),
+        allowanceFormatted: Number(allowance) > 1e30 ? 'unlimited' : (Number(allowance) / 1e6).toFixed(2),
+    };
+}
 
 // ============ Types ============
 
@@ -79,6 +115,37 @@ export async function createMarketOrder(
     }
 
     try {
+        // Get funder address from service to check balance/allowance
+        const funderAddress = service.getFunderAddress();
+        if (funderAddress) {
+            console.log('[Order] Checking USDC status for:', funderAddress);
+            try {
+                const usdcStatus = await checkUSDCStatus(funderAddress);
+                console.log('[Order] USDC Balance:', usdcStatus.balanceFormatted, 'USDC');
+                console.log('[Order] USDC Allowance for Exchange:', usdcStatus.allowanceFormatted);
+
+                // Check if we have enough balance
+                const requiredAmount = BigInt(Math.ceil(params.amount * 1e6));
+                if (usdcStatus.balance < requiredAmount) {
+                    return {
+                        success: false,
+                        error: `Insufficient USDC balance. Have: $${usdcStatus.balanceFormatted}, Need: $${params.amount.toFixed(2)}`
+                    };
+                }
+
+                // Check if allowance is sufficient
+                if (usdcStatus.allowance < requiredAmount) {
+                    return {
+                        success: false,
+                        error: `USDC not approved for trading. Please click "Approve USDC for Buying" first. Current allowance: $${usdcStatus.allowanceFormatted}`
+                    };
+                }
+            } catch (err) {
+                console.warn('[Order] Could not check USDC status:', err);
+                // Continue anyway - let the API handle the error
+            }
+        }
+
         // Get current best price from order book
         const orderBook = await service.getOrderBook(params.tokenId);
 
