@@ -31,6 +31,13 @@ export function MarketList({
     const { markets, isLoading, error, loadMore, hasMore, refresh } = useMarkets();
     const [category, setCategory] = useState<MarketCategory>('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const [displayLimit, setDisplayLimit] = useState(maxMarkets);
+
+    // Handle load more - increase display limit and fetch more if needed
+    const handleLoadMore = async () => {
+        setDisplayLimit(prev => prev + maxMarkets);
+        await loadMore();
+    };
 
     // Filter and curate markets
     const filteredMarkets = useMemo(() => {
@@ -66,9 +73,9 @@ export function MarketList({
             return true;
         });
 
-        // Limit to max markets
-        return filtered.slice(0, maxMarkets);
-    }, [markets, category, searchQuery, maxMarkets]);
+        // Limit to display limit
+        return filtered.slice(0, displayLimit);
+    }, [markets, category, searchQuery, displayLimit]);
 
     // Get price display for a market (show as $ price like Polymarket)
     const getMarketPrice = (market: SimplifiedMarket): string => {
@@ -262,10 +269,10 @@ export function MarketList({
             </div>
 
             {/* Load More */}
-            {hasMore && !isLoading && filteredMarkets.length >= maxMarkets && (
+            {hasMore && !isLoading && filteredMarkets.length >= displayLimit && (
                 <div className="p-4 border-t border-gray-700/30">
                     <button
-                        onClick={loadMore}
+                        onClick={handleLoadMore}
                         className="w-full py-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
                     >
                         Load more markets...
