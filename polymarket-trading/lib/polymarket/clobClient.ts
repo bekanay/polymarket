@@ -376,10 +376,10 @@ export class PolymarketService {
 
             const data = await response.json();
 
-            // Debug: Log first market structure
-            if (data && data.length > 0) {
-                console.log('Gamma API first market sample:', JSON.stringify(data[0], null, 2).substring(0, 1000));
-            }
+            // Debug logging removed - uncomment if needed for debugging
+            // if (data && data.length > 0) {
+            //     console.log('Gamma API first market sample:', JSON.stringify(data[0], null, 2).substring(0, 1000));
+            // }
 
             // Transform Gamma API response to our SimplifiedMarket format
             const markets: SimplifiedMarket[] = (data || []).map((market: {
@@ -435,17 +435,40 @@ export class PolymarketService {
 
     /**
      * Get detailed market information by condition ID
+     * Uses direct CLOB API call to avoid CORS issues with Gamma API
      * @param conditionId - The market's condition ID
      */
     async getMarket(conditionId: string): Promise<Market | null> {
-        if (!this.client) {
-            this.initializeReadOnly();
-        }
 
         try {
-            return await this.client!.getMarket(conditionId);
+            // Direct fetch to CLOB API (avoids CORS issues with Gamma API)
+            const response = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, {
+                headers: {
+                    'Accept': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const data = await response.json();
+
+            // Transform CLOB API response to our Market format
+            return {
+                condition_id: data.condition_id || conditionId,
+                question_id: data.question_id || '',
+                tokens: data.tokens || [],
+                question: data.question || data.description || 'Unknown Market',
+                description: data.description,
+                end_date_iso: data.end_date_iso,
+                active: data.active !== false,
+                closed: data.closed === true,
+                accepting_orders: data.accepting_orders !== false,
+                minimum_order_size: data.minimum_order_size,
+                minimum_tick_size: data.minimum_tick_size,
+            };
         } catch (error) {
-            console.error('Error fetching market:', error);
             return null;
         }
     }

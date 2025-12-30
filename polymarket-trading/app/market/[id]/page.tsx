@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
-import { getPolymarketService, type SimplifiedMarket } from '@/lib/polymarket';
+import { getPolymarketService, type SimplifiedMarket, type Market } from '@/lib/polymarket';
 import { LoginButton, WalletInfo, DisconnectButton } from '@/components/wallet';
 import { TradingView } from '@/components/trading';
 
@@ -32,11 +32,20 @@ export default function MarketPage() {
 
             try {
                 const service = getPolymarketService();
-                const response = await service.getMarkets(100, 0);
-                const found = response.markets.find(m => m.condition_id === conditionId);
+                // Fetch market directly by condition ID
+                const marketData = await service.getMarket(conditionId);
 
-                if (found) {
-                    setMarket(found);
+                if (marketData) {
+                    // Convert Market to SimplifiedMarket format for compatibility with TradingView
+                    const simplified: SimplifiedMarket = {
+                        condition_id: marketData.condition_id,
+                        question: marketData.question,
+                        tokens: marketData.tokens,
+                        active: marketData.active,
+                        closed: marketData.closed,
+                        end_date_iso: marketData.end_date_iso,
+                    };
+                    setMarket(simplified);
                 } else {
                     setError('Market not found');
                 }
