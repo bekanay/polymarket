@@ -3,12 +3,14 @@
  * 
  * Displays bids (buy orders) and asks (sell orders) for a market.
  * Click on a price to populate the order form.
+ * Uses WebSocket for real-time updates with HTTP fallback.
  */
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getPolymarketService, type OrderBookSummary } from '@/lib/polymarket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface OrderBookProps {
     tokenId: string;
@@ -26,6 +28,29 @@ export function OrderBook({ tokenId, onPriceClick }: OrderBookProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Memoize tokenIds array to prevent useWebSocket re-subscriptions
+    const tokenIds = useMemo(() => tokenId ? [tokenId] : [], [tokenId]);
+
+    // WebSocket for real-time updates
+    const { isConnected, orderBook: wsOrderBook } = useWebSocket({
+        tokenIds,
+        onBookUpdate: useCallback((tid: string, bids: { price: string; size: string }[], asks: { price: string; size: string }[]) => {
+            if (tid === tokenId) {
+                setOrderBook({ bids, asks } as OrderBookSummary);
+            }
+        }, [tokenId]),
+    });
+
+    // Update from WebSocket when received
+    useEffect(() => {
+        if (wsOrderBook) {
+            setOrderBook({
+                bids: wsOrderBook.bids,
+                asks: wsOrderBook.asks,
+            } as OrderBookSummary);
+        }
+    }, [wsOrderBook]);
+
     const fetchOrderBook = useCallback(async () => {
         if (!tokenId) return;
 
@@ -41,12 +66,19 @@ export function OrderBook({ tokenId, onPriceClick }: OrderBookProps) {
         }
     }, [tokenId]);
 
-    // Initial fetch and polling
+    // Initial fetch via HTTP (WebSocket will take over after connection)
     useEffect(() => {
         fetchOrderBook();
-        const interval = setInterval(fetchOrderBook, 5000); // Poll every 5 seconds
+
+        // Fallback polling only if WebSocket is not connected
+        const interval = setInterval(() => {
+            if (!isConnected) {
+                fetchOrderBook();
+            }
+        }, 10000); // Poll less frequently since WS is primary
+
         return () => clearInterval(interval);
-    }, [fetchOrderBook]);
+    }, [fetchOrderBook, isConnected]);
 
     // Parse order book data into display format
     const parseLevels = (
@@ -106,7 +138,16 @@ export function OrderBook({ tokenId, onPriceClick }: OrderBookProps) {
 
     return (
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 p-4 h-full flex flex-col">
-            <h3 className="text-sm font-semibold text-white mb-3">Order Book</h3>
+            <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-white">Order Book</h3>
+                {/* WebSocket connection indicator */}
+                <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                    <span className="text-xs text-gray-500">
+                        {isConnected ? 'Live' : 'Polling'}
+                    </span>
+                </div>
+            </div>
 
             {/* Header */}
             <div className="grid grid-cols-3 text-xs text-gray-500 pb-2 border-b border-gray-700/30">
