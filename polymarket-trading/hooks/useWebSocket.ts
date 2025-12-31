@@ -8,12 +8,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-    getPolymarketWebSocket,
-    type OnBookUpdate,
-    type OnPriceUpdate,
-    type OnTradeUpdate,
-} from '@/lib/polymarket/websocket';
+import { getPolymarketWebSocket } from '@/lib/polymarket/websocket';
 
 interface OrderBookLevel {
     price: string;
@@ -53,6 +48,7 @@ export function useWebSocket({
     const onBookUpdateRef = useRef(onBookUpdate);
     const onPriceUpdateRef = useRef(onPriceUpdate);
     const onTradeUpdateRef = useRef(onTradeUpdate);
+    const listenerIdRef = useRef<string | null>(null);
 
     // Update refs when callbacks change
     useEffect(() => {
@@ -61,58 +57,44 @@ export function useWebSocket({
         onTradeUpdateRef.current = onTradeUpdate;
     }, [onBookUpdate, onPriceUpdate, onTradeUpdate]);
 
-    // Handle book updates
-    const handleBookUpdate: OnBookUpdate = useCallback((tokenId, bids, asks) => {
-        // Only update if this token is in our subscription
-        if (tokenIds.includes(tokenId)) {
-            setOrderBook({ bids, asks });
-            onBookUpdateRef.current?.(tokenId, bids, asks);
-        }
-    }, [tokenIds]);
-
-    // Handle price updates
-    const handlePriceUpdate: OnPriceUpdate = useCallback((tokenId, price) => {
-        if (tokenIds.includes(tokenId)) {
-            setLastPrice(price);
-            onPriceUpdateRef.current?.(tokenId, price);
-        }
-    }, [tokenIds]);
-
-    // Handle trade updates
-    const handleTradeUpdate: OnTradeUpdate = useCallback((tokenId, price) => {
-        if (tokenIds.includes(tokenId)) {
-            onTradeUpdateRef.current?.(tokenId, price);
-        }
-    }, [tokenIds]);
-
     // Connect and subscribe on mount
     useEffect(() => {
         if (tokenIds.length === 0) return;
 
         const ws = getPolymarketWebSocket();
 
-        // Set callbacks
-        ws.setCallbacks({
-            onBookUpdate: handleBookUpdate,
-            onPriceUpdate: handlePriceUpdate,
-            onTradeUpdate: handleTradeUpdate,
-            onConnectionChange: setIsConnected,
+        // Connect first
+        ws.connect().catch(console.error);
+
+        // Add listener with callbacks
+        const listenerId = ws.addListener({
+            tokenIds,
+            onBookUpdate: (tokenId, bids, asks) => {
+                setOrderBook({ bids, asks });
+                onBookUpdateRef.current?.(tokenId, bids, asks);
+            },
+            onPriceUpdate: (tokenId, price) => {
+                setLastPrice(price);
+                onPriceUpdateRef.current?.(tokenId, price);
+            },
+            onTradeUpdate: (tokenId, price) => {
+                onTradeUpdateRef.current?.(tokenId, price);
+            },
+            onConnectionChange: (connected) => {
+                setIsConnected(connected);
+            },
         });
 
-        // Connect and subscribe
-        ws.connect()
-            .then(() => {
-                ws.subscribe(tokenIds);
-            })
-            .catch((err) => {
-                console.error('[useWebSocket] Connection failed:', err);
-            });
+        listenerIdRef.current = listenerId;
 
         // Cleanup on unmount
         return () => {
-            ws.unsubscribe(tokenIds);
+            if (listenerIdRef.current) {
+                ws.removeListener(listenerIdRef.current);
+                listenerIdRef.current = null;
+            }
         };
-    }, [tokenIds, handleBookUpdate, handlePriceUpdate, handleTradeUpdate]);
+    }, [tokenIds.join(',')]); // Only re-run if tokenIds change
 
     return {
         isConnected,

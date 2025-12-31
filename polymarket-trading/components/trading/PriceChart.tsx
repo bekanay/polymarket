@@ -3,13 +3,15 @@
  * 
  * Displays historical price data using recharts.
  * Supports multiple time ranges: 1H, 24H, 7D, 30D.
+ * Uses WebSocket for real-time price updates.
  */
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { getPolymarketService } from '@/lib/polymarket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface PriceChartProps {
     tokenId: string;
@@ -36,6 +38,43 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
     const [priceData, setPriceData] = useState<PricePoint[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [livePrice, setLivePrice] = useState<number | null>(null);
+
+    // Memoize tokenIds for WebSocket
+    const tokenIds = useMemo(() => tokenId ? [tokenId] : [], [tokenId]);
+
+    // WebSocket for real-time price updates
+    const { isConnected } = useWebSocket({
+        tokenIds,
+        onPriceUpdate: useCallback((tid: string, price: string) => {
+            if (tid === tokenId) {
+                const priceNum = parseFloat(price) * 100;
+                setLivePrice(priceNum);
+
+                setPriceData(prev => {
+                    const now = Date.now();
+                    const newPoint: PricePoint = {
+                        timestamp: now,
+                        price: priceNum,
+                        date: new Date(now).toLocaleString(),
+                    };
+
+                    if (prev.length > 0) {
+                        const lastPoint = prev[prev.length - 1];
+                        if (now - lastPoint.timestamp < 5000) {
+                            return [...prev.slice(0, -1), newPoint];
+                        }
+                    }
+                    return [...prev, newPoint].slice(-500);
+                });
+            }
+        }, [tokenId]),
+        onTradeUpdate: useCallback((tid: string, price: string) => {
+            if (tid === tokenId) {
+                setLivePrice(parseFloat(price) * 100);
+            }
+        }, [tokenId]),
+    });
 
     const fetchPriceHistory = useCallback(async () => {
         if (!tokenId) return;
@@ -54,11 +93,10 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
 
             const points: PricePoint[] = history.map((point) => ({
                 timestamp: point.t * 1000,
-                price: Number(point.p) * 100, // Convert to percentage
+                price: Number(point.p) * 100,
                 date: new Date(point.t * 1000).toLocaleString(),
             }));
 
-            // Add current price as last point if available
             if (currentPrice !== undefined && points.length > 0) {
                 points.push({
                     timestamp: now,
@@ -70,7 +108,6 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
             setPriceData(points);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load price history');
-            // Generate mock data for demo
             const mockData = generateMockData(timeRange, currentPrice);
             setPriceData(mockData);
         } finally {
@@ -82,7 +119,6 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
         fetchPriceHistory();
     }, [fetchPriceHistory]);
 
-    // Generate mock data for demo purposes
     function generateMockData(range: TimeRange, price?: number): PricePoint[] {
         const config = TIME_RANGE_CONFIG[range];
         const now = Date.now();
@@ -101,7 +137,6 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
             });
         }
 
-        // End at current price
         if (price !== undefined) {
             points.push({
                 timestamp: now,
@@ -115,7 +150,6 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
 
     const timeRanges: TimeRange[] = ['1H', '24H', '7D', '30D'];
 
-    // Calculate price change
     const priceChange = priceData.length >= 2
         ? priceData[priceData.length - 1].price - priceData[0].price
         : 0;
@@ -125,14 +159,28 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
 
     return (
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 p-4 h-full flex flex-col">
-            {/* Header */}
             <div className="flex items-center justify-between mb-4">
                 <div>
-                    <h3 className="text-sm font-semibold text-white">Price History</h3>
+                    <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-white">Price History</h3>
+                        <div className="flex items-center gap-1">
+                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                            <span className="text-xs text-gray-500">
+                                {isConnected ? 'Live' : 'Polling'}
+                            </span>
+                        </div>
+                    </div>
                     {priceData.length > 0 && (
-                        <span className={`text-xs ${priceChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {priceChange >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}% ({TIME_RANGE_CONFIG[timeRange].label})
-                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className={`text-xs ${priceChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {priceChange >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}% ({TIME_RANGE_CONFIG[timeRange].label})
+                            </span>
+                            {livePrice !== null && (
+                                <span className="text-xs text-white font-medium">
+                                    Now: {livePrice.toFixed(1)}%
+                                </span>
+                            )}
+                        </div>
                     )}
                 </div>
                 <div className="flex gap-1">
@@ -151,7 +199,6 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
                 </div>
             </div>
 
-            {/* Chart */}
             <div className="flex-1 min-h-[200px]">
                 {isLoading ? (
                     <div className="flex items-center justify-center h-full">
@@ -209,6 +256,7 @@ export function PriceChart({ tokenId, currentPrice }: PriceChartProps) {
                                 stroke={priceChange >= 0 ? '#10b981' : '#ef4444'}
                                 fill="url(#priceGradient)"
                                 strokeWidth={2}
+                                isAnimationActive={false}
                             />
                         </AreaChart>
                     </ResponsiveContainer>

@@ -5,6 +5,8 @@
  * - Order book changes
  * - Price updates
  * - Trade events
+ * 
+ * Supports multiple listeners via event emitter pattern.
  */
 
 // WebSocket URL for Polymarket CLOB
@@ -26,13 +28,6 @@ export interface WSMessage {
     // For price_change events
     price?: string;
     changes?: Array<{ price: string; size: string }>;
-    // For last_trade_price
-    // price field is reused
-}
-
-export interface WSSubscription {
-    assets_ids: string[];
-    type: WSEventType;
 }
 
 // Callback types
@@ -41,37 +36,60 @@ export type OnPriceUpdate = (tokenId: string, price: string) => void;
 export type OnTradeUpdate = (tokenId: string, price: string) => void;
 export type OnConnectionChange = (connected: boolean) => void;
 
+interface Listener {
+    id: string;
+    tokenIds: string[];
+    onBookUpdate?: OnBookUpdate;
+    onPriceUpdate?: OnPriceUpdate;
+    onTradeUpdate?: OnTradeUpdate;
+    onConnectionChange?: OnConnectionChange;
+}
+
 /**
- * WebSocket Manager for Polymarket
+ * WebSocket Manager for Polymarket with multiple listener support
  */
 export class PolymarketWebSocket {
     private ws: WebSocket | null = null;
     private subscriptions: Set<string> = new Set();
+    private listeners: Map<string, Listener> = new Map();
     private reconnectAttempts = 0;
     private maxReconnectAttempts = 5;
     private reconnectDelay = 1000;
     private pingInterval: NodeJS.Timeout | null = null;
     private isConnecting = false;
-
-    // Callbacks
-    private onBookUpdate: OnBookUpdate | null = null;
-    private onPriceUpdate: OnPriceUpdate | null = null;
-    private onTradeUpdate: OnTradeUpdate | null = null;
-    private onConnectionChange: OnConnectionChange | null = null;
+    private connected = false;
 
     /**
-     * Set callback handlers
+     * Add a listener for WebSocket events
+     * Returns a unique listener ID for removal
      */
-    setCallbacks(callbacks: {
-        onBookUpdate?: OnBookUpdate;
-        onPriceUpdate?: OnPriceUpdate;
-        onTradeUpdate?: OnTradeUpdate;
-        onConnectionChange?: OnConnectionChange;
-    }) {
-        if (callbacks.onBookUpdate) this.onBookUpdate = callbacks.onBookUpdate;
-        if (callbacks.onPriceUpdate) this.onPriceUpdate = callbacks.onPriceUpdate;
-        if (callbacks.onTradeUpdate) this.onTradeUpdate = callbacks.onTradeUpdate;
-        if (callbacks.onConnectionChange) this.onConnectionChange = callbacks.onConnectionChange;
+    addListener(listener: Omit<Listener, 'id'>): string {
+        const id = Math.random().toString(36).substring(7);
+        this.listeners.set(id, { ...listener, id });
+
+        // Subscribe to new tokens
+        listener.tokenIds.forEach(tokenId => {
+            if (!this.subscriptions.has(tokenId)) {
+                this.subscriptions.add(tokenId);
+                if (this.connected) {
+                    this.sendSubscription([tokenId]);
+                }
+            }
+        });
+
+        // Notify listener of current connection state
+        if (listener.onConnectionChange) {
+            listener.onConnectionChange(this.connected);
+        }
+
+        return id;
+    }
+
+    /**
+     * Remove a listener by ID
+     */
+    removeListener(id: string) {
+        this.listeners.delete(id);
     }
 
     /**
@@ -99,12 +117,17 @@ export class PolymarketWebSocket {
                     console.log('[WS] Connected to Polymarket WebSocket');
                     this.isConnecting = false;
                     this.reconnectAttempts = 0;
-                    this.onConnectionChange?.(true);
+                    this.connected = true;
 
-                    // Start ping interval to keep connection alive
+                    // Notify all listeners
+                    this.listeners.forEach(listener => {
+                        listener.onConnectionChange?.(true);
+                    });
+
+                    // Start ping interval
                     this.startPing();
 
-                    // Re-subscribe to previously subscribed assets
+                    // Subscribe to all registered tokens
                     if (this.subscriptions.size > 0) {
                         this.sendSubscription(Array.from(this.subscriptions));
                     }
@@ -119,8 +142,14 @@ export class PolymarketWebSocket {
                 this.ws.onclose = () => {
                     console.log('[WS] WebSocket closed');
                     this.isConnecting = false;
+                    this.connected = false;
                     this.stopPing();
-                    this.onConnectionChange?.(false);
+
+                    // Notify all listeners
+                    this.listeners.forEach(listener => {
+                        listener.onConnectionChange?.(false);
+                    });
+
                     this.attemptReconnect();
                 };
 
@@ -146,29 +175,22 @@ export class PolymarketWebSocket {
             this.ws = null;
         }
         this.subscriptions.clear();
+        this.listeners.clear();
+        this.connected = false;
     }
 
     /**
      * Subscribe to updates for specific token IDs
      */
     subscribe(tokenIds: string[]) {
-        tokenIds.forEach(id => this.subscriptions.add(id));
+        const newTokens = tokenIds.filter(id => !this.subscriptions.has(id));
+        newTokens.forEach(id => this.subscriptions.add(id));
 
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            this.sendSubscription(tokenIds);
-        } else {
-            // Connect first, then subscribe
+        if (this.ws?.readyState === WebSocket.OPEN && newTokens.length > 0) {
+            this.sendSubscription(newTokens);
+        } else if (!this.connected && !this.isConnecting) {
             this.connect().catch(console.error);
         }
-    }
-
-    /**
-     * Unsubscribe from token IDs
-     */
-    unsubscribe(tokenIds: string[]) {
-        tokenIds.forEach(id => this.subscriptions.delete(id));
-        // Note: Polymarket WS doesn't have explicit unsubscribe, 
-        // just stop processing those events
     }
 
     /**
@@ -191,35 +213,46 @@ export class PolymarketWebSocket {
      */
     private handleMessage(data: string) {
         try {
-            const messages: WSMessage[] = JSON.parse(data);
+            // Skip PONG messages
+            if (data === 'PONG') return;
 
-            // Can be array or single message
+            const messages: WSMessage[] = JSON.parse(data);
             const messageArray = Array.isArray(messages) ? messages : [messages];
 
             for (const msg of messageArray) {
-                switch (msg.event_type) {
-                    case 'book':
-                        if (msg.asset_id && msg.bids && msg.asks) {
-                            this.onBookUpdate?.(msg.asset_id, msg.bids, msg.asks);
-                        }
-                        break;
+                // Find listeners interested in this asset
+                this.listeners.forEach(listener => {
+                    if (!listener.tokenIds.includes(msg.asset_id)) return;
 
-                    case 'price_change':
-                        if (msg.asset_id && msg.price) {
-                            this.onPriceUpdate?.(msg.asset_id, msg.price);
-                        }
-                        break;
+                    switch (msg.event_type) {
+                        case 'book':
+                            if (msg.bids && msg.asks) {
+                                console.log('[WS] Book update for', msg.asset_id?.substring(0, 10), '- bids:', msg.bids.length, 'asks:', msg.asks.length);
+                                listener.onBookUpdate?.(msg.asset_id, msg.bids, msg.asks);
+                            }
+                            break;
 
-                    case 'last_trade_price':
-                        if (msg.asset_id && msg.price) {
-                            this.onTradeUpdate?.(msg.asset_id, msg.price);
-                        }
-                        break;
-                }
+                        case 'price_change':
+                            if (msg.price) {
+                                console.log('[WS] Price change:', msg.price);
+                                listener.onPriceUpdate?.(msg.asset_id, msg.price);
+                            }
+                            break;
+
+                        case 'last_trade_price':
+                            if (msg.price) {
+                                console.log('[WS] Last trade:', msg.price);
+                                listener.onTradeUpdate?.(msg.asset_id, msg.price);
+                            }
+                            break;
+                    }
+                });
             }
-        } catch (error) {
-            // Might be a ping/pong or other non-JSON message
-            console.debug('[WS] Non-JSON message:', data);
+        } catch {
+            // Non-JSON message (INVALID OPERATION, etc.)
+            if (data !== 'PONG' && !data.includes('INVALID')) {
+                console.log('[WS] Non-JSON message:', data);
+            }
         }
     }
 
@@ -232,7 +265,7 @@ export class PolymarketWebSocket {
             if (this.ws?.readyState === WebSocket.OPEN) {
                 this.ws.send('PING');
             }
-        }, 5000); // Ping every 5 seconds as recommended
+        }, 5000);
     }
 
     /**
@@ -268,7 +301,7 @@ export class PolymarketWebSocket {
      * Check if connected
      */
     isConnected(): boolean {
-        return this.ws?.readyState === WebSocket.OPEN;
+        return this.connected;
     }
 }
 
