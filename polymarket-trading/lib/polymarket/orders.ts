@@ -115,35 +115,40 @@ export async function createMarketOrder(
     }
 
     try {
-        // Get funder address from service to check balance/allowance
-        const funderAddress = service.getFunderAddress();
-        if (funderAddress) {
-            console.log('[Order] Checking USDC status for:', funderAddress);
-            try {
-                const usdcStatus = await checkUSDCStatus(funderAddress);
-                console.log('[Order] USDC Balance:', usdcStatus.balanceFormatted, 'USDC');
-                console.log('[Order] USDC Allowance for Exchange:', usdcStatus.allowanceFormatted);
+        // Only check USDC balance/allowance for BUY orders
+        // SELL orders use existing token holdings, not USDC
+        if (params.side === Side.BUY) {
+            const funderAddress = service.getFunderAddress();
+            if (funderAddress) {
+                console.log('[Order] Checking USDC status for:', funderAddress);
+                try {
+                    const usdcStatus = await checkUSDCStatus(funderAddress);
+                    console.log('[Order] USDC Balance:', usdcStatus.balanceFormatted, 'USDC');
+                    console.log('[Order] USDC Allowance for Exchange:', usdcStatus.allowanceFormatted);
 
-                // Check if we have enough balance
-                const requiredAmount = BigInt(Math.ceil(params.amount * 1e6));
-                if (usdcStatus.balance < requiredAmount) {
-                    return {
-                        success: false,
-                        error: `Insufficient USDC balance. Have: $${usdcStatus.balanceFormatted}, Need: $${params.amount.toFixed(2)}`
-                    };
-                }
+                    // Check if we have enough balance
+                    const requiredAmount = BigInt(Math.ceil(params.amount * 1e6));
+                    if (usdcStatus.balance < requiredAmount) {
+                        return {
+                            success: false,
+                            error: `Insufficient USDC balance. Have: $${usdcStatus.balanceFormatted}, Need: $${params.amount.toFixed(2)}`
+                        };
+                    }
 
-                // Check if allowance is sufficient
-                if (usdcStatus.allowance < requiredAmount) {
-                    return {
-                        success: false,
-                        error: `USDC not approved for trading. Please click "Approve USDC for Buying" first. Current allowance: $${usdcStatus.allowanceFormatted}`
-                    };
+                    // Check if allowance is sufficient
+                    if (usdcStatus.allowance < requiredAmount) {
+                        return {
+                            success: false,
+                            error: `USDC not approved for trading. Please click "Approve USDC for Buying" first. Current allowance: $${usdcStatus.allowanceFormatted}`
+                        };
+                    }
+                } catch (err) {
+                    console.warn('[Order] Could not check USDC status:', err);
+                    // Continue anyway - let the API handle the error
                 }
-            } catch (err) {
-                console.warn('[Order] Could not check USDC status:', err);
-                // Continue anyway - let the API handle the error
             }
+        } else {
+            console.log('[Order] SELL order - skipping USDC balance check (uses token holdings)');
         }
 
         // Get current best price from order book
