@@ -9,8 +9,16 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
+import { usePrivy, useWallets, useSendTransaction, useSignTypedData } from '@privy-io/react-auth';
 import { ethers, Interface } from 'ethers';
+import { getProxyWalletService } from '@/lib/wallet/proxyWallet';
+import {
+    SAFE_EXEC_ABI,
+    buildSafeTransaction,
+    buildSafeTypedData,
+    encodeSafeExecTransaction,
+    signTypedDataV4,
+} from '@/lib/wallet/safeTransaction';
 
 // Polymarket Conditional Token Framework (CTF) contract on Polygon
 // This is the ERC-1155 contract that holds Yes/No tokens
@@ -40,6 +48,7 @@ export function useApproveCTF(): UseApproveCTFReturn {
     const { authenticated } = usePrivy();
     const { wallets } = useWallets();
     const { sendTransaction } = useSendTransaction();
+    const { signTypedData } = useSignTypedData();
     const [isApproving, setIsApproving] = useState(false);
     const [isApproved, setIsApproved] = useState<boolean | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -98,23 +107,69 @@ export function useApproveCTF(): UseApproveCTFReturn {
         try {
             console.log('Approving CTF tokens for Polymarket with gas sponsorship...');
 
-            // Encode the setApprovalForAll function call
+            const embeddedWallet = wallets.find(wallet => wallet.walletClientType === 'privy');
+
+            if (!embeddedWallet) {
+                throw new Error('Privy embedded wallet required for gas sponsorship.');
+            }
+
+            const ownerAddress = embeddedWallet.address;
+            const walletProvider = await embeddedWallet.getEthereumProvider();
+
+            const proxyService = getProxyWalletService();
+            const proxyWalletAddress =
+                proxyService.getProxyWallet(ownerAddress) ??
+                await proxyService.checkAndRecoverWallet(ownerAddress);
+
+            if (!proxyWalletAddress) {
+                throw new Error('No proxy wallet found. Create a proxy wallet first.');
+            }
+
+            // Encode the setApprovalForAll function call (executed by the Safe)
             const iface = new Interface(ERC1155_ABI);
             const callData = iface.encodeFunctionData('setApprovalForAll', [
                 POLYMARKET_EXCHANGE,
-                true
+                true,
             ]);
+
+            const rpcUrl = process.env.NEXT_PUBLIC_POLYGON_RPC_URL || 'https://polygon-rpc.com';
+            const publicProvider = new ethers.JsonRpcProvider(rpcUrl);
+
+            const safeContract = new ethers.Contract(proxyWalletAddress, SAFE_EXEC_ABI, publicProvider);
+            const nonce = await safeContract.nonce();
+
+            const safeTx = buildSafeTransaction({
+                to: CTF_ADDRESS,
+                data: callData,
+                nonce,
+            });
+
+            const typedData = buildSafeTypedData(137, proxyWalletAddress, safeTx);
+            let signature: string;
+            try {
+                const result = await signTypedData(typedData, {
+                    address: ownerAddress,
+                    uiOptions: { showWalletUIs: false },
+                });
+                signature = result.signature;
+            } catch (signError) {
+                console.warn('Privy signTypedData failed, falling back to provider request:', signError);
+                signature = await signTypedDataV4(walletProvider, ownerAddress, typedData);
+            }
+
+            const execData = encodeSafeExecTransaction(safeTx, signature);
 
             // Send transaction using Privy's gas sponsorship
             const txResult = await sendTransaction(
                 {
-                    to: CTF_ADDRESS,
-                    data: callData,
+                    to: proxyWalletAddress,
+                    data: execData,
                     chainId: 137, // Polygon Mainnet
                 },
                 {
                     // Enable gas sponsorship from Privy
                     sponsor: true,
+                    address: ownerAddress,
                 }
             );
 
@@ -123,7 +178,7 @@ export function useApproveCTF(): UseApproveCTFReturn {
 
             // Wait for confirmation using public RPC
             console.log('Waiting for confirmation...');
-            const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+            const provider = new ethers.JsonRpcProvider(rpcUrl);
 
             let receipt = null;
             for (let i = 0; i < 30; i++) {

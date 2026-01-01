@@ -317,7 +317,8 @@ export class PolymarketService {
         // SignatureType.EOA (0) = signer is the maker (no proxy)
         // SignatureType.POLY_PROXY (1) = signer is different from maker (using proxy wallet)
         const isUsingProxy = funderAddress.toLowerCase() !== signerAddr.toLowerCase();
-        const signatureType = isUsingProxy ? SignatureType.POLY_PROXY : SignatureType.EOA;
+        // Polymarket recognizes Gnosis Safe proxies with a distinct signature type.
+        const signatureType = isUsingProxy ? SignatureType.POLY_GNOSIS_SAFE : SignatureType.EOA;
 
         console.log(`Initializing CLOB client: signer=${signerAddr}, funder=${funderAddress}, isProxy=${isUsingProxy}, signatureType=${signatureType}`);
 

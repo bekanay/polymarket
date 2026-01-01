@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { getPolymarketService } from '@/lib/polymarket';
-import { getProxyWalletService } from '@/lib/wallet/proxyWallet';
+import { useProxyWallet } from '@/hooks/useProxyWallet';
 
 interface UseTradingReturn {
     isInitialized: boolean;
@@ -60,10 +60,16 @@ function createV5CompatibleSigner(signer: ethers.Signer): any {
 export function useTrading(): UseTradingReturn {
     const { authenticated, user } = usePrivy();
     const { wallets } = useWallets();
+    const {
+        proxyWalletAddress,
+        isLoading: isProxyLoading,
+        isCreating: isProxyCreating,
+        createProxyWallet,
+    } = useProxyWallet();
     const [isInitialized, setIsInitialized] = useState(false);
     const [isInitializing, setIsInitializing] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [proxyWalletAddress, setProxyWalletAddress] = useState<string | null>(null);
+    const [funderAddress, setFunderAddress] = useState<string | null>(null);
 
     // Ref to prevent multiple initialization attempts
     const initializationAttempted = useRef(false);
@@ -105,6 +111,28 @@ export function useTrading(): UseTradingReturn {
 
         console.log('Using wallet type:', connectedWallet.walletClientType);
 
+        if (isProxyLoading) {
+            console.log('Proxy wallet still loading, waiting to initialize trading...');
+            return;
+        }
+
+        let resolvedFunderAddress = proxyWalletAddress;
+
+        if (!resolvedFunderAddress) {
+            if (isProxyCreating) {
+                console.log('Proxy wallet creation already in progress...');
+                return;
+            }
+
+            console.log('No proxy wallet found. Creating proxy wallet...');
+            const created = await createProxyWallet();
+            resolvedFunderAddress = created?.proxyWalletAddress ?? null;
+            if (!resolvedFunderAddress) {
+                setError('Failed to create proxy wallet. Please try again.');
+                return;
+            }
+        }
+
         // Mark initialization as attempted
         initializationAttempted.current = true;
         setIsInitializing(true);
@@ -117,27 +145,20 @@ export function useTrading(): UseTradingReturn {
             const signer = await ethersProvider.getSigner();
             const userAddress = await signer.getAddress();
 
-            // IMPORTANT: Gnosis Safe proxy wallets we create are NOT official Polymarket proxies.
-            // Polymarket only accepts orders from:
-            // 1. User's main wallet (EOA) - SignatureType.EOA
-            // 2. Official Polymarket proxy contracts (registered on their exchange)
-            // 
-            // Our Gnosis Safe is for potential future gas sponsorship, NOT for Polymarket trading.
-            // For now, always use the user's main wallet for trading.
-            const funderAddress = userAddress;
-            setProxyWalletAddress(funderAddress);
+            setFunderAddress(resolvedFunderAddress);
 
-            console.log('Trading initialized with user wallet:', userAddress);
+            console.log('Trading initialized with signer:', userAddress);
+            console.log('Trading funder (proxy wallet):', resolvedFunderAddress);
 
             // Wrap signer for ethers v5 compatibility (CLOB client expects _signTypedData)
             const v5Signer = createV5CompatibleSigner(signer);
 
             // Initialize the Polymarket service with v5-compatible signer
             const polyService = getPolymarketService();
-            await polyService.initialize(v5Signer, funderAddress);
+            await polyService.initialize(v5Signer, resolvedFunderAddress);
 
             setIsInitialized(true);
-            console.log('Trading initialized with funder:', funderAddress);
+            console.log('Trading initialized with funder:', resolvedFunderAddress);
         } catch (err) {
             console.error('Failed to initialize trading:', err);
             setError(err instanceof Error ? err.message : 'Failed to initialize trading');
@@ -146,7 +167,15 @@ export function useTrading(): UseTradingReturn {
         } finally {
             setIsInitializing(false);
         }
-    }, [authenticated, wallets, isInitializing]);
+    }, [
+        authenticated,
+        wallets,
+        isInitializing,
+        isProxyLoading,
+        isProxyCreating,
+        proxyWalletAddress,
+        createProxyWallet,
+    ]);
 
     // Auto-initialize when authenticated (only once)
     useEffect(() => {
@@ -159,7 +188,7 @@ export function useTrading(): UseTradingReturn {
         isInitialized,
         isInitializing,
         error,
-        proxyWalletAddress,
+        proxyWalletAddress: funderAddress,
         initializeTrading,
     };
 }
