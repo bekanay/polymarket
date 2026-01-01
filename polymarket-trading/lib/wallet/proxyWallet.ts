@@ -487,8 +487,8 @@ export class ProxyWalletService {
      * @returns USDC balance as string (in USDC units with 6 decimals)
      */
     async getUSDCBalance(proxyWalletAddress: string): Promise<string> {
-        // Native USDC on Polygon (Polymarket uses this, NOT USDC.e)
-        const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+        // USDC.e on Polygon (matches funding/allowance flow in this app)
+        const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
         const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 
         const usdcContract = new Contract(USDC_ADDRESS, USDC_ABI, this.provider);
