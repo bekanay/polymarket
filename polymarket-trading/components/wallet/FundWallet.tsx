@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePrivy, useWallets, useFundWallet, useSendTransaction } from '@privy-io/react-auth';
 import { BrowserProvider, Contract, Interface, parseUnits, formatUnits } from 'ethers';
+import { polygon } from 'viem/chains';
 
 // USDC.e (Bridged USDC) on Polygon - Polymarket uses this, NOT Native USDC!
 // Native USDC: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 (don't use this)
@@ -227,7 +228,15 @@ export function FundWallet({
                 {/* Fund Options - always visible */}
                 <div className="mt-3 flex gap-2">
                     <button
-                        onClick={() => fundWallet({ address: embeddedWallet.address, options: { defaultFundingMethod: 'card' } })}
+                        onClick={() => fundWallet({
+                            address: embeddedWallet.address,
+                            options: {
+                                defaultFundingMethod: 'card',
+                                // Force USDC on Polygon - required for Polymarket trading
+                                asset: 'USDC',
+                                chain: polygon,
+                            }
+                        })}
                         className="flex-1 py-2 px-3 bg-gradient-to-r from-green-600 to-emerald-600 
                                    hover:from-green-500 hover:to-emerald-500 text-white text-sm font-medium 
                                    rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
