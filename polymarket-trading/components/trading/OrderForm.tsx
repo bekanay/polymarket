@@ -114,11 +114,16 @@ export function OrderForm({
             // Market order - execute at current price
             // For BUY: amount is USDC to spend
             // For SELL: amount is number of shares to sell
-            await placeMarketOrder({
+            const result = await placeMarketOrder({
                 tokenId: targetTokenId,
                 side: orderSide,
                 amount: amountNum,
             });
+
+            // Double-check result in case callback didn't fire
+            if (!result.success && result.error) {
+                setError(result.error);
+            }
         } else {
             // Limit order - execute at specified price
             const priceNum = parseFloat(limitPrice);
@@ -132,12 +137,17 @@ export function OrderForm({
             // For SELL: amount is already the number of shares
             const size = isBuy ? (amountNum / price) : amountNum;
 
-            await placeLimitOrder({
+            const result = await placeLimitOrder({
                 tokenId: targetTokenId,
                 side: orderSide,
                 price,
                 size,
             });
+
+            // Double-check result in case callback didn't fire
+            if (!result.success && result.error) {
+                setError(result.error);
+            }
         }
     }, [amount, limitPrice, orderType, action, tokenId, noTokenId, placeMarketOrder, placeLimitOrder]);
 

@@ -617,6 +617,26 @@ export class PolymarketService {
                 orderType
             );
 
+            console.log('[createOrder] CLOB response:', response);
+
+            // Check if response contains an error
+            if (response && typeof response === 'object' && 'error' in response) {
+                console.error('[createOrder] Response contains error:', response.error);
+                return {
+                    success: false,
+                    error: String(response.error) || 'Order failed',
+                };
+            }
+
+            // Check if response is missing order ID (indicates failure)
+            if (!response?.orderID && !response?.order_id) {
+                console.error('[createOrder] No order ID in response:', response);
+                return {
+                    success: false,
+                    error: 'Order failed - no order ID returned',
+                };
+            }
+
             return {
                 success: true,
                 orderId: response.orderID || response.order_id,
