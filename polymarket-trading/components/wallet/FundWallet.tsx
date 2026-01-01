@@ -124,11 +124,17 @@ export function FundWallet({
             setStatus('pending');
 
             // Use Privy's sendTransaction for gas sponsorship
-            const txReceipt = await sendTransaction({
-                to: USDC_ADDRESS,
-                data: data,
-                chainId: 137, // Polygon
-            });
+            const txReceipt = await sendTransaction(
+                {
+                    to: USDC_ADDRESS,
+                    data: data,
+                    chainId: 137, // Polygon
+                },
+                {
+                    sponsor: true,
+                    address: embeddedWallet.address,
+                }
+            );
 
             const hash = txReceipt.hash;
             setTxHash(hash);
