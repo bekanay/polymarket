@@ -58,7 +58,7 @@ function createV5CompatibleSigner(signer: ethers.Signer): any {
 }
 
 export function useTrading(): UseTradingReturn {
-    const { authenticated, user } = usePrivy();
+    const { authenticated } = usePrivy();
     const { wallets } = useWallets();
     const {
         proxyWalletAddress,
@@ -86,26 +86,10 @@ export function useTrading(): UseTradingReturn {
             return;
         }
 
-        // Find embedded wallet (created by Privy for Google/email login)
-        const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
-
-        // Check if user logged in via social (Google, email) or via external wallet
-        const linkedWallet = user?.linkedAccounts?.find(a => a.type === 'wallet');
-        const loggedInWithExternalWallet = linkedWallet && linkedWallet.walletClientType !== 'privy';
-
-        // If user logged in with Google/email, ONLY use embedded wallet
-        // If user logged in with MetaMask, use that wallet
-        let connectedWallet;
-        if (loggedInWithExternalWallet) {
-            // User logged in with MetaMask or other external wallet
-            connectedWallet = wallets.find(w => w.walletClientType !== 'privy') || embeddedWallet;
-        } else {
-            // User logged in with Google/email - use embedded wallet only
-            connectedWallet = embeddedWallet;
-        }
+        const connectedWallet = wallets.find(w => w.walletClientType === 'privy');
 
         if (!connectedWallet) {
-            setError('No wallet available. Please try logging in again.');
+            setError('Embedded wallet required for gas-sponsored trading.');
             return;
         }
 

@@ -4,6 +4,11 @@ export const POLYMARKET_CLOB_API = process.env.NEXT_PUBLIC_POLYMARKET_CLOB_API |
 
 export const POLYGON_CHAIN_ID = 137;
 
+// Polymarket Gnosis Safe proxy factory (per Polymarket proxy wallet docs)
+export const POLYMARKET_PROXY_FACTORY =
+    process.env.NEXT_PUBLIC_POLYMARKET_PROXY_FACTORY ||
+    '0xaacfeea03eb1561c4e67d661e40682bd20e3541b';
+
 export const SUPPORTED_TOKENS = {
     USDC: {
         address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',

@@ -5,7 +5,7 @@
 
 import { ethers, keccak256, toUtf8Bytes, AbiCoder, getCreate2Address } from 'ethers';
 
-const PROXY_FACTORY = '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2';
+const PROXY_FACTORY = '0xaacfeea03eb1561c4e67d661e40682bd20e3541b';
 const SAFE_MASTER_COPY_L2 = '0x3E5c63644E683549055b9Be8653de26E0B4CD36E';
 const FALLBACK_HANDLER = '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4';
 

@@ -16,7 +16,8 @@
  * is designed for ethers v5, so we implement the core functionality natively.
  */
 
-import { ethers, Contract, Provider, Signer, Interface, TransactionReceipt, keccak256, toUtf8Bytes, AbiCoder, getCreate2Address } from 'ethers';
+import { ethers, Contract, Provider, Signer, Interface, keccak256, toUtf8Bytes, AbiCoder, getCreate2Address } from 'ethers';
+import { POLYMARKET_PROXY_FACTORY } from '@/constants';
 
 // Storage key for proxy wallet mappings
 const PROXY_WALLET_STORAGE_KEY = 'polymarket_proxy_wallets';
@@ -31,14 +32,14 @@ const SAFE_CONTRACTS: Record<number, {
 }> = {
     // Polygon Mainnet
     137: {
-        proxyFactory: '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2',
+        proxyFactory: POLYMARKET_PROXY_FACTORY,
         safeMasterCopy: '0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552', // L1 Safe
         safeMasterCopyL2: '0x3E5c63644E683549055b9Be8653de26E0B4CD36E', // L2 Safe (recommended for Polygon)
         fallbackHandler: '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4',
     },
     // Polygon Amoy Testnet (Safe contracts deployed at same addresses)
     80002: {
-        proxyFactory: '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2',
+        proxyFactory: POLYMARKET_PROXY_FACTORY,
         safeMasterCopy: '0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552',
         safeMasterCopyL2: '0x3E5c63644E683549055b9Be8653de26E0B4CD36E',
         fallbackHandler: '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4',
@@ -213,8 +214,8 @@ export class ProxyWalletService {
         ownerAddress: string,
         onTransactionHash?: (txHash: string) => void
     ): Promise<ProxyWalletResult> {
-        // Check if user already has a proxy wallet
-        const existingWallet = this.getProxyWallet(ownerAddress);
+        // Check if user already has a proxy wallet (local or on-chain)
+        const existingWallet = await this.checkAndRecoverWallet(ownerAddress);
         if (existingWallet) {
             return {
                 proxyWalletAddress: existingWallet,
@@ -381,15 +382,19 @@ export class ProxyWalletService {
      * @returns Proxy wallet address if found on-chain, null otherwise
      */
     async checkAndRecoverWallet(userAddress: string): Promise<string | null> {
-        // First check localStorage
-        const stored = this.getProxyWallet(userAddress);
-        if (stored) {
-            return stored;
-        }
-
-        // Predict the address and check if deployed
         try {
             const predictedAddress = await this.predictProxyAddress(userAddress);
+            const stored = this.getProxyWallet(userAddress);
+
+            if (stored) {
+                if (stored.toLowerCase() === predictedAddress.toLowerCase()) {
+                    return stored;
+                }
+
+                // Stored address was created by a different factory/config; remove and continue.
+                this.removeProxyWallet(userAddress);
+            }
+
             const isDeployed = await this.isSafeDeployed(predictedAddress);
 
             if (isDeployed) {
@@ -433,7 +438,7 @@ export class ProxyWalletService {
         userAddress: string,
         onTransactionHash?: (txHash: string) => void
     ): Promise<ProxyWalletResult> {
-        const existing = this.getProxyWallet(userAddress);
+        const existing = await this.checkAndRecoverWallet(userAddress);
         if (existing) {
             return {
                 proxyWalletAddress: existing,

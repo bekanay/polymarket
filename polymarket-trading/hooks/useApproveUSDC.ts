@@ -114,9 +114,7 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
             const walletProvider = await embeddedWallet.getEthereumProvider();
 
             const proxyService = getProxyWalletService();
-            const proxyWalletAddress =
-                proxyService.getProxyWallet(ownerAddress) ??
-                await proxyService.checkAndRecoverWallet(ownerAddress);
+            const proxyWalletAddress = await proxyService.checkAndRecoverWallet(ownerAddress);
 
             if (!proxyWalletAddress) {
                 throw new Error('No proxy wallet found. Create a proxy wallet first.');

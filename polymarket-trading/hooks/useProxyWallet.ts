@@ -8,14 +8,15 @@
 
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
-import { ethers, Interface, keccak256, toUtf8Bytes, AbiCoder, getCreate2Address } from 'ethers';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { usePrivy, useWallets, useSendTransaction, useCreateWallet } from '@privy-io/react-auth';
+import { ethers, Interface, keccak256, toUtf8Bytes } from 'ethers';
 import { getProxyWalletService } from '@/lib/wallet/proxyWallet';
+import { POLYMARKET_PROXY_FACTORY, POLYGON_CHAIN_ID } from '@/constants';
 
 // Polygon mainnet contract addresses (Gnosis Safe v1.3.0)
 const SAFE_CONTRACTS = {
-    proxyFactory: '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2',
+    proxyFactory: POLYMARKET_PROXY_FACTORY,
     safeMasterCopyL2: '0x3E5c63644E683549055b9Be8653de26E0B4CD36E',
     fallbackHandler: '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4',
 };
@@ -42,6 +43,10 @@ interface ProxyWalletState {
     usdcBalance: string | null;
 }
 
+type EmbeddedWallet = {
+    address: string;
+};
+
 // Interface for proxy wallet creation result  
 export interface ProxyWalletResult {
     proxyWalletAddress: string;
@@ -51,6 +56,8 @@ export interface ProxyWalletResult {
 
 // Return interface for the hook
 interface UseProxyWalletReturn extends ProxyWalletState {
+    isDeploying: boolean;
+    proxyAddress: string | null;
     createProxyWallet: () => Promise<ProxyWalletResult | null>;
     refreshBalance: () => Promise<void>;
     refreshUsdcBalance: () => Promise<void>;
@@ -107,9 +114,10 @@ function generateSaltNonce(ownerAddress: string): string {
  * Uses Privy's gas sponsorship for transaction fees
  */
 export function useProxyWallet(): UseProxyWalletReturn {
-    const { authenticated, ready, user } = usePrivy();
+    const { authenticated, ready } = usePrivy();
     const { wallets } = useWallets();
     const { sendTransaction } = useSendTransaction();
+    const { createWallet } = useCreateWallet();
 
     const [state, setState] = useState<ProxyWalletState>({
         proxyWalletAddress: null,
@@ -119,34 +127,206 @@ export function useProxyWallet(): UseProxyWalletReturn {
         balance: null,
         usdcBalance: null,
     });
+    const autoDeployAttemptRef = useRef<string | null>(null);
+    const deployPromiseRef = useRef<Promise<ProxyWalletResult | null> | null>(null);
+    const embeddedWalletPromiseRef = useRef<Promise<EmbeddedWallet | null> | null>(null);
 
-    // Get the connected wallet address
-    const getConnectedWalletAddress = useCallback((): string | null => {
-        // First, try to get embedded wallet from user
-        const embeddedWallet = user?.linkedAccounts?.find(
-            account => account.type === 'wallet' && account.walletClientType === 'privy'
-        );
+    const getEmbeddedWallet = useCallback((): EmbeddedWallet | null => {
+        const embeddedWallet = wallets.find(wallet => wallet.walletClientType === 'privy');
+        return embeddedWallet ? { address: embeddedWallet.address } : null;
+    }, [wallets]);
 
-        if (embeddedWallet && 'address' in embeddedWallet) {
-            return embeddedWallet.address;
+    const ensureEmbeddedWallet = useCallback(async (): Promise<EmbeddedWallet | null> => {
+        const existingWallet = getEmbeddedWallet();
+        if (existingWallet) {
+            return existingWallet;
         }
 
-        // Fallback to first connected wallet from useWallets
-        if (wallets.length > 0) {
-            return wallets[0].address;
+        if (embeddedWalletPromiseRef.current) {
+            return embeddedWalletPromiseRef.current;
         }
 
-        return null;
-    }, [user, wallets]);
+        const createPromise = createWallet()
+            .then(wallet => ({ address: wallet.address }))
+            .catch(error => {
+                console.error('Failed to create embedded wallet:', error);
+                setState(prev => ({
+                    ...prev,
+                    error: 'Embedded wallet required for gas-sponsored transactions.',
+                }));
+                return null;
+            })
+            .finally(() => {
+                embeddedWalletPromiseRef.current = null;
+            });
 
-    // Check for existing proxy wallet on mount
+        embeddedWalletPromiseRef.current = createPromise;
+        return createPromise;
+    }, [createWallet, getEmbeddedWallet]);
+
+    const deployProxyWallet = useCallback(async (): Promise<ProxyWalletResult | null> => {
+        if (deployPromiseRef.current) {
+            return deployPromiseRef.current;
+        }
+
+        if (!authenticated) {
+            setState(prev => ({ ...prev, error: 'Please connect your wallet first' }));
+            return null;
+        }
+
+        const deployPromise = (async (): Promise<ProxyWalletResult | null> => {
+            try {
+                const embeddedWallet = await ensureEmbeddedWallet();
+                if (!embeddedWallet) {
+                    setState(prev => ({
+                        ...prev,
+                        isLoading: false,
+                        error: 'Embedded wallet required for gas-sponsored transactions.',
+                    }));
+                    return null;
+                }
+
+                const ownerAddress = embeddedWallet.address;
+                const service = getProxyWalletService();
+
+                const existingWallet = await service.checkAndRecoverWallet(ownerAddress);
+                if (existingWallet) {
+                    const [balance, usdcBalance] = await Promise.all([
+                        service.getProxyWalletBalance(existingWallet).catch(() => '0'),
+                        service.getUSDCBalance(existingWallet).catch(() => '0'),
+                    ]);
+
+                    setState(prev => ({
+                        ...prev,
+                        proxyWalletAddress: existingWallet,
+                        balance: formatBalance(balance, 18),
+                        usdcBalance: formatBalance(usdcBalance, 6),
+                        isLoading: false,
+                        isCreating: false,
+                        error: null,
+                    }));
+
+                    return {
+                        proxyWalletAddress: existingWallet,
+                        isNew: false,
+                    };
+                }
+
+                setState(prev => ({ ...prev, isCreating: true, isLoading: false, error: null }));
+
+                const initializer = generateSafeSetupData(ownerAddress);
+                const saltNonce = generateSaltNonce(ownerAddress);
+
+                const proxyFactoryInterface = new Interface(PROXY_FACTORY_ABI);
+                const callData = proxyFactoryInterface.encodeFunctionData('createProxyWithNonce', [
+                    SAFE_CONTRACTS.safeMasterCopyL2,
+                    initializer,
+                    saltNonce,
+                ]);
+
+                console.log('Creating proxy wallet with gas sponsorship...');
+
+                const txResult = await sendTransaction(
+                    {
+                        to: SAFE_CONTRACTS.proxyFactory,
+                        data: callData,
+                        chainId: POLYGON_CHAIN_ID,
+                    },
+                    {
+                        sponsor: true,
+                        address: ownerAddress,
+                    }
+                );
+
+                console.log('Transaction sent:', txResult);
+
+                const txHash = txResult.hash;
+                let proxyWalletAddress: string | null = null;
+
+                const rpcUrl = process.env.NEXT_PUBLIC_POLYGON_RPC_URL || 'https://polygon-rpc.com';
+                const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+                let receipt = null;
+                for (let i = 0; i < 30; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    receipt = await provider.getTransactionReceipt(txHash);
+                    if (receipt) break;
+                }
+
+                if (!receipt || receipt.status === 0) {
+                    throw new Error('Transaction failed or timed out');
+                }
+
+                for (const log of receipt.logs) {
+                    try {
+                        const parsed = proxyFactoryInterface.parseLog({
+                            topics: log.topics as string[],
+                            data: log.data,
+                        });
+                        if (parsed && parsed.name === 'ProxyCreation') {
+                            proxyWalletAddress = parsed.args[0];
+                            break;
+                        }
+                    } catch {
+                        // Not a ProxyCreation event, continue
+                    }
+                }
+
+                if (!proxyWalletAddress) {
+                    proxyWalletAddress = await service.predictProxyAddress(ownerAddress);
+                    const isDeployed = await service.isSafeDeployed(proxyWalletAddress);
+                    if (!isDeployed) {
+                        throw new Error('Proxy wallet deployment could not be verified');
+                    }
+                }
+
+                service.recoverWallet(ownerAddress, proxyWalletAddress);
+
+                const [balance, usdcBalance] = await Promise.all([
+                    service.getProxyWalletBalance(proxyWalletAddress).catch(() => '0'),
+                    service.getUSDCBalance(proxyWalletAddress).catch(() => '0'),
+                ]);
+
+                setState(prev => ({
+                    ...prev,
+                    proxyWalletAddress: proxyWalletAddress,
+                    balance: formatBalance(balance, 18),
+                    usdcBalance: formatBalance(usdcBalance, 6),
+                    isLoading: false,
+                    isCreating: false,
+                    error: null,
+                }));
+
+                return {
+                    proxyWalletAddress: proxyWalletAddress,
+                    isNew: true,
+                    transactionHash: txHash,
+                };
+            } catch (error) {
+                console.error('Error creating proxy wallet:', error);
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                setState(prev => ({
+                    ...prev,
+                    isLoading: false,
+                    isCreating: false,
+                    error: `Failed to create proxy wallet: ${errorMessage}`
+                }));
+                return null;
+            } finally {
+                deployPromiseRef.current = null;
+            }
+        })();
+
+        deployPromiseRef.current = deployPromise;
+        return deployPromise;
+    }, [authenticated, ensureEmbeddedWallet, sendTransaction]);
+
     useEffect(() => {
         if (!ready) return;
 
         const checkExistingWallet = async () => {
-            const userAddress = getConnectedWalletAddress();
-
-            if (!authenticated || !userAddress) {
+            if (!authenticated) {
+                autoDeployAttemptRef.current = null;
                 setState(prev => ({
                     ...prev,
                     isLoading: false,
@@ -157,20 +337,25 @@ export function useProxyWallet(): UseProxyWalletReturn {
                 return;
             }
 
+            const embeddedWallet = await ensureEmbeddedWallet();
+            const ownerAddress = embeddedWallet?.address;
+
+            if (!ownerAddress) {
+                setState(prev => ({
+                    ...prev,
+                    isLoading: false,
+                    proxyWalletAddress: null,
+                }));
+                return;
+            }
+
             try {
                 const service = getProxyWalletService();
 
-                // Check localStorage first, then try to recover from chain
-                let existingWallet = service.getProxyWallet(userAddress);
-
-                if (!existingWallet) {
-                    // Try to recover from on-chain (wallet may exist but not in localStorage)
-                    console.log('Checking for existing on-chain proxy wallet...');
-                    existingWallet = await service.checkAndRecoverWallet(userAddress);
-                }
+                console.log('Checking for existing on-chain proxy wallet...');
+                const existingWallet = await service.checkAndRecoverWallet(ownerAddress);
 
                 if (existingWallet) {
-                    // Fetch balances for existing wallet
                     const [balance, usdcBalance] = await Promise.all([
                         service.getProxyWalletBalance(existingWallet).catch(() => '0'),
                         service.getUSDCBalance(existingWallet).catch(() => '0'),
@@ -191,6 +376,11 @@ export function useProxyWallet(): UseProxyWalletReturn {
                         proxyWalletAddress: null,
                         error: null,
                     }));
+
+                    if (autoDeployAttemptRef.current !== ownerAddress) {
+                        autoDeployAttemptRef.current = ownerAddress;
+                        void deployProxyWallet();
+                    }
                 }
             } catch (error) {
                 console.error('Error checking existing wallet:', error);
@@ -203,143 +393,11 @@ export function useProxyWallet(): UseProxyWalletReturn {
         };
 
         checkExistingWallet();
-    }, [ready, authenticated, getConnectedWalletAddress]);
+    }, [ready, authenticated, ensureEmbeddedWallet, deployProxyWallet]);
 
-    // Create proxy wallet using Privy's gas-sponsored transactions
     const createProxyWallet = useCallback(async (): Promise<ProxyWalletResult | null> => {
-        const userAddress = getConnectedWalletAddress();
-
-        if (!authenticated || !userAddress) {
-            setState(prev => ({ ...prev, error: 'Please connect your wallet first' }));
-            return null;
-        }
-
-        setState(prev => ({ ...prev, isCreating: true, error: null }));
-
-        try {
-            const service = getProxyWalletService();
-
-            // Check if wallet already exists
-            const existingWallet = service.getProxyWallet(userAddress);
-            if (existingWallet) {
-                setState(prev => ({
-                    ...prev,
-                    proxyWalletAddress: existingWallet,
-                    isCreating: false,
-                }));
-                return {
-                    proxyWalletAddress: existingWallet,
-                    isNew: false,
-                };
-            }
-
-            // Generate the Safe setup data (initializer)
-            const initializer = generateSafeSetupData(userAddress);
-            const saltNonce = generateSaltNonce(userAddress);
-
-            // Encode the createProxyWithNonce function call
-            const proxyFactoryInterface = new Interface(PROXY_FACTORY_ABI);
-            const callData = proxyFactoryInterface.encodeFunctionData('createProxyWithNonce', [
-                SAFE_CONTRACTS.safeMasterCopyL2,
-                initializer,
-                saltNonce,
-            ]);
-
-            console.log('Creating proxy wallet with gas sponsorship...');
-
-            // Send transaction using Privy's gas sponsorship
-            const txResult = await sendTransaction(
-                {
-                    to: SAFE_CONTRACTS.proxyFactory,
-                    data: callData,
-                    chainId: 137, // Polygon Mainnet
-                },
-                {
-                    // Enable gas sponsorship from Privy
-                    sponsor: true,
-                }
-            );
-
-            console.log('Transaction sent:', txResult);
-
-            // useSendTransaction returns { hash: string }, need to wait for receipt
-            const txHash = txResult.hash;
-            let proxyWalletAddress: string | null = null;
-
-            // Wait for transaction receipt using provider
-            const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
-
-            // Poll for receipt
-            let receipt = null;
-            for (let i = 0; i < 30; i++) {
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                receipt = await provider.getTransactionReceipt(txHash);
-                if (receipt) break;
-            }
-
-            if (!receipt || receipt.status === 0) {
-                throw new Error('Transaction failed or timed out');
-            }
-
-            // Extract proxy address from transaction logs
-            for (const log of receipt.logs) {
-                try {
-                    const parsed = proxyFactoryInterface.parseLog({
-                        topics: log.topics as string[],
-                        data: log.data,
-                    });
-                    if (parsed && parsed.name === 'ProxyCreation') {
-                        proxyWalletAddress = parsed.args[0];
-                        break;
-                    }
-                } catch {
-                    // Not a ProxyCreation event, continue
-                }
-            }
-
-            // If we couldn't extract from logs, predict the address
-            if (!proxyWalletAddress) {
-                proxyWalletAddress = await service.predictProxyAddress(userAddress);
-                // Verify it was deployed
-                const isDeployed = await service.isSafeDeployed(proxyWalletAddress);
-                if (!isDeployed) {
-                    throw new Error('Proxy wallet deployment could not be verified');
-                }
-            }
-
-            // Store the mapping
-            service.recoverWallet(userAddress, proxyWalletAddress);
-
-            // Fetch initial balances
-            const [balance, usdcBalance] = await Promise.all([
-                service.getProxyWalletBalance(proxyWalletAddress).catch(() => '0'),
-                service.getUSDCBalance(proxyWalletAddress).catch(() => '0'),
-            ]);
-
-            setState(prev => ({
-                ...prev,
-                proxyWalletAddress: proxyWalletAddress,
-                balance: formatBalance(balance, 18),
-                usdcBalance: formatBalance(usdcBalance, 6),
-                isCreating: false,
-            }));
-
-            return {
-                proxyWalletAddress: proxyWalletAddress,
-                isNew: true,
-                transactionHash: txHash,
-            };
-        } catch (error) {
-            console.error('Error creating proxy wallet:', error);
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            setState(prev => ({
-                ...prev,
-                isCreating: false,
-                error: `Failed to create proxy wallet: ${errorMessage}`
-            }));
-            return null;
-        }
-    }, [authenticated, getConnectedWalletAddress, sendTransaction]);
+        return deployProxyWallet();
+    }, [deployProxyWallet]);
 
     // Refresh native balance
     const refreshBalance = useCallback(async (): Promise<void> => {
@@ -369,6 +427,8 @@ export function useProxyWallet(): UseProxyWalletReturn {
 
     return {
         ...state,
+        isDeploying: state.isCreating,
+        proxyAddress: state.proxyWalletAddress,
         createProxyWallet,
         refreshBalance,
         refreshUsdcBalance,
