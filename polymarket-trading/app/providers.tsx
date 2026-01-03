@@ -1,6 +1,7 @@
 'use client';
 
 import { PrivyProvider } from '@privy-io/react-auth';
+import { SmartWalletsProvider } from '@privy-io/react-auth/smart-wallets';
 import { privyConfig, PRIVY_APP_ID } from '@/lib/privy/config';
 import { useLogoutCleanup } from '@/hooks/useLogoutCleanup';
 
@@ -20,9 +21,11 @@ export function Providers({ children }: ProvidersProps) {
             appId={PRIVY_APP_ID}
             config={privyConfig}
         >
-            <LogoutCleanupProvider>
-                {children}
-            </LogoutCleanupProvider>
+            <SmartWalletsProvider>
+                <LogoutCleanupProvider>
+                    {children}
+                </LogoutCleanupProvider>
+            </SmartWalletsProvider>
         </PrivyProvider>
     );
 }

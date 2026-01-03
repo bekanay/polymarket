@@ -19,9 +19,11 @@
     "axios": "^1.13.2",
     "ethers": "^6.16.0",
     "next": "16.1.1",
+    "permissionless": "^0.2.57",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.6.0",
+    "viem": "^2.43.5",
     "ws": "^8.18.3"
   },
   "devDependencies": {
