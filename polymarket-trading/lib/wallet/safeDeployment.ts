@@ -1,10 +1,14 @@
 import { ethers } from 'ethers';
 import { getPrivyClient } from '../privy/server';
 
-// Polymarket-compatible Gnosis Safe v1.3.0 addresses on Polygon
+// Official Gnosis Safe v1.3.0 addresses on Polygon
+// Using canonical addresses from safe-global/safe-deployments
 export const SAFE_CONSTANTS = {
-    PROXY_FACTORY: '0xaacfeea03eb1561c4e67d661e40682bd20e3541b',
-    SINGLETON_L2: '0x3e5c6364520a8308fbf4291975b954602b17f038',
+    // Official Safe Proxy Factory 1.3.0 on Polygon (canonical deployment)
+    PROXY_FACTORY: '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2',
+    // Official Safe L2 Singleton 1.3.0 on Polygon
+    SINGLETON_L2: '0x3E5c63644E683549055b9Be8653de26E0B4CD36E',
+    // Official Compatibility Fallback Handler 1.3.0
     FALLBACK_HANDLER: '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4',
     POLYGON_CHAIN_ID: 137,
     POLYGON_CAIP2: 'eip155:137' as const,
