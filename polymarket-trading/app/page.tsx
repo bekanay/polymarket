@@ -1,34 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { LoginButton, WalletInfo, DisconnectButton, ProxyWallet, FundWallet } from '@/components/wallet';
+import { LoginButton, WalletInfo, DisconnectButton, WalletCard } from '@/components/wallet';
 import { MarketList } from '@/components/markets';
-import { useProxyWallet } from '@/hooks/useProxyWallet';
 import { usePrivy } from '@privy-io/react-auth';
 import type { SimplifiedMarket } from '@/lib/polymarket';
-
-// Wallet Dashboard - combines ProxyWallet and FundWallet
-function WalletDashboard() {
-  const { proxyWalletAddress, hasProxyWallet, refreshBalance, refreshUsdcBalance } = useProxyWallet();
-
-  const handleFundingComplete = () => {
-    refreshBalance();
-    refreshUsdcBalance();
-  };
-
-  return (
-    <div className="space-y-6">
-      <ProxyWallet showFunding={false} />
-      {hasProxyWallet && (
-        <FundWallet
-          proxyWalletAddress={proxyWalletAddress}
-          onFundingComplete={handleFundingComplete}
-          onBalanceUpdate={handleFundingComplete}
-        />
-      )}
-    </div>
-  );
-}
 
 // Selected Market Display
 function SelectedMarketInfo({ market }: { market: SimplifiedMarket | null }) {
@@ -141,7 +117,7 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left: Wallet Section */}
             <div className="lg:col-span-1 space-y-6">
-              <WalletDashboard />
+              <WalletCard />
               <SelectedMarketInfo market={selectedMarket} />
             </div>
 

@@ -2,19 +2,19 @@
  * useUserOrders Hook
  * 
  * Provides access to the authenticated user's open orders.
+ * Works directly with EOA wallet (no proxy wallet).
  */
 
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { Wallet } from '@ethersproject/wallet';
 import { BrowserProvider } from 'ethers';
 import {
     getPolymarketService,
     type OpenOrder
 } from '@/lib/polymarket';
-import { useProxyWallet } from './useProxyWallet';
+import { useWallet } from './useWallet';
 
 interface UseUserOrdersReturn {
     orders: OpenOrder[];
@@ -32,7 +32,7 @@ interface UseUserOrdersReturn {
 export function useUserOrders(): UseUserOrdersReturn {
     const { authenticated, ready } = usePrivy();
     const { wallets } = useWallets();
-    const { proxyWalletAddress } = useProxyWallet();
+    const { walletAddress } = useWallet();
 
     const [orders, setOrders] = useState<OpenOrder[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -48,7 +48,7 @@ export function useUserOrders(): UseUserOrdersReturn {
     // Initialize the Polymarket service with signer
     useEffect(() => {
         const initializeService = async () => {
-            if (!authenticated || !proxyWalletAddress || !embeddedWallet) {
+            if (!authenticated || !walletAddress || !embeddedWallet) {
                 setIsInitializing(false);
                 return;
             }
@@ -74,7 +74,7 @@ export function useUserOrders(): UseUserOrdersReturn {
         };
 
         initializeService();
-    }, [authenticated, proxyWalletAddress, embeddedWallet]);
+    }, [authenticated, walletAddress, embeddedWallet]);
 
     // Fetch orders
     const fetchOrders = useCallback(async () => {

@@ -2,7 +2,7 @@
  * Custom React hooks exports
  */
 
-export { useProxyWallet } from './useProxyWallet';
+export { useWallet } from './useWallet';
 export { useMarkets } from './useMarkets';
 export { useOrderBook } from './useOrderBook';
 export { useUserOrders } from './useUserOrders';

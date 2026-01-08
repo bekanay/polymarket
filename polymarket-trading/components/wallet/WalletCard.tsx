@@ -1,53 +1,47 @@
 /**
- * ProxyWallet Component
+ * WalletCard Component
  * 
- * Displays proxy wallet status and provides wallet creation/management functionality.
- * Uses Gnosis Safe for secure wallet management with gas-sponsored transactions.
+ * Displays EOA wallet (embedded Privy wallet) status and balances.
+ * Includes funding options via Privy's built-in on-ramp.
  */
 
 'use client';
 
 import { useState } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
-import { useProxyWallet } from '@/hooks/useProxyWallet';
-import { FundWallet } from './FundWallet';
+import { usePrivy, useWallets, useFundWallet } from '@privy-io/react-auth';
+import { useWallet } from '@/hooks/useWallet';
+import { polygon } from 'viem/chains';
 
-interface ProxyWalletProps {
-    showFunding?: boolean;
+interface WalletCardProps {
     compact?: boolean;
 }
 
-export function ProxyWallet({ showFunding = true, compact = false }: ProxyWalletProps) {
+export function WalletCard({ compact = false }: WalletCardProps) {
     const { authenticated, ready } = usePrivy();
+    const { wallets } = useWallets();
+    const { fundWallet } = useFundWallet();
     const {
-        proxyWalletAddress,
+        walletAddress,
         isLoading,
-        isCreating,
         error,
         balance,
         usdcBalance,
-        hasProxyWallet,
-        createProxyWallet,
+        hasWallet,
         refreshBalance,
         refreshUsdcBalance,
-    } = useProxyWallet();
+    } = useWallet();
 
-    const [txHash, setTxHash] = useState<string | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Get the embedded wallet
+    const embeddedWallet = wallets.find(
+        wallet => wallet.walletClientType === 'privy'
+    );
 
     // Don't render if not authenticated
     if (!ready || !authenticated) {
         return null;
     }
-
-    // Handle wallet creation
-    const handleCreateWallet = async () => {
-        setTxHash(null);
-        const result = await createProxyWallet();
-        if (result?.transactionHash) {
-            setTxHash(result.transactionHash);
-        }
-    };
 
     // Handle balance refresh
     const handleRefresh = async () => {
@@ -59,11 +53,6 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
     // Copy address to clipboard
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text);
-    };
-
-    // Truncate address for display
-    const truncateAddress = (address: string) => {
-        return `${address.slice(0, 6)}...${address.slice(-4)}`;
     };
 
     // Loading state
@@ -78,8 +67,8 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
         );
     }
 
-    // No proxy wallet - show creation UI
-    if (!hasProxyWallet) {
+    // No wallet yet
+    if (!hasWallet || !walletAddress) {
         return (
             <div className={`${compact ? 'p-4' : 'p-6'} bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50`}>
                 <div className="flex flex-col gap-4">
@@ -88,63 +77,19 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
                             <span className="text-xl">🔐</span>
                         </div>
                         <div>
-                            <h3 className="text-white font-semibold">Proxy Wallet</h3>
-                            <p className="text-sm text-gray-400">Create a secure trading wallet</p>
+                            <h3 className="text-white font-semibold">Wallet</h3>
+                            <p className="text-sm text-gray-400">No wallet connected</p>
                         </div>
                     </div>
-
-                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/30">
-                        <p className="text-sm text-gray-300 mb-3">
-                            A proxy wallet (Gnosis Safe) enables:
-                        </p>
-                        <ul className="text-sm text-gray-400 space-y-1.5">
-                            <li className="flex items-center gap-2">
-                                <span className="text-green-400">✓</span> Gas-sponsored transactions
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <span className="text-green-400">✓</span> Secure multi-sig protection
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <span className="text-green-400">✓</span> Isolated trading funds
-                            </li>
-                        </ul>
-                    </div>
-
-                    {error && (
-                        <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3">
-                            <p className="text-sm text-red-400">{error}</p>
-                        </div>
-                    )}
-
-                    <button
-                        onClick={handleCreateWallet}
-                        disabled={isCreating}
-                        className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:from-gray-600 disabled:to-gray-600 text-white font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
-                    >
-                        {isCreating ? (
-                            <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Creating Wallet...
-                            </>
-                        ) : (
-                            <>
-                                <span>🚀</span>
-                                Create Proxy Wallet
-                            </>
-                        )}
-                    </button>
-
-                    {isCreating && (
-                        <p className="text-xs text-center text-gray-500">
-                            This may take a moment. Please confirm the transaction in your wallet.
-                        </p>
-                    )}
+                    <p className="text-sm text-gray-400">
+                        Please log in with email or Google to create an embedded wallet.
+                    </p>
                 </div>
             </div>
         );
     }
 
-    // Has proxy wallet - show wallet info
+    // Has wallet - show wallet info
     return (
         <div className={`${compact ? 'p-4' : 'p-6'} bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50`}>
             <div className="flex flex-col gap-4">
@@ -155,8 +100,8 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
                             <span className="text-xl">✓</span>
                         </div>
                         <div>
-                            <h3 className="text-white font-semibold">Proxy Wallet</h3>
-                            <p className="text-sm text-gray-400">Gnosis Safe</p>
+                            <h3 className="text-white font-semibold">Trading Wallet</h3>
+                            <p className="text-sm text-gray-400">Privy Embedded</p>
                         </div>
                     </div>
                     <button
@@ -181,17 +126,17 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Address</span>
                         <button
-                            onClick={() => copyToClipboard(proxyWalletAddress!)}
+                            onClick={() => copyToClipboard(walletAddress)}
                             className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                         >
                             Copy
                         </button>
                     </div>
                     <p className="font-mono text-white text-sm break-all">
-                        {proxyWalletAddress}
+                        {walletAddress}
                     </p>
                     <a
-                        href={`https://polygonscan.com/address/${proxyWalletAddress}`}
+                        href={`https://polygonscan.com/address/${walletAddress}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-indigo-400 hover:text-indigo-300 mt-2 inline-block"
@@ -216,31 +161,44 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
                     </div>
                 </div>
 
-                {/* Transaction Hash (if just created) */}
-                {txHash && (
-                    <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3">
-                        <p className="text-sm text-green-400 mb-1">✓ Wallet created successfully!</p>
-                        <a
-                            href={`https://polygonscan.com/tx/${txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-green-300 hover:text-green-200"
+                {/* Fund Wallet Button */}
+                {embeddedWallet && (
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => fundWallet({
+                                address: embeddedWallet.address,
+                                options: {
+                                    defaultFundingMethod: 'card',
+                                    asset: 'USDC',
+                                    chain: polygon,
+                                }
+                            })}
+                            className="flex-1 py-3 px-4 bg-gradient-to-r from-green-600 to-emerald-600 
+                                       hover:from-green-500 hover:to-emerald-500 text-white font-medium 
+                                       rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
                         >
-                            View transaction: {truncateAddress(txHash)} →
-                        </a>
+                            <span>💵</span>
+                            Buy USDC
+                        </button>
+                        <button
+                            onClick={() => copyToClipboard(walletAddress)}
+                            className="py-3 px-4 bg-gray-700/50 hover:bg-gray-700 text-white 
+                                       rounded-lg transition-colors flex items-center justify-center gap-2"
+                            title="Copy address to receive crypto"
+                        >
+                            <span>📋</span>
+                            Copy
+                        </button>
                     </div>
                 )}
 
-                {/* Funding Section - Transfer USDC from embedded wallet to proxy */}
-                {showFunding && proxyWalletAddress && (
-                    <div className="border-t border-gray-700/50 pt-4 mt-2">
-                        <FundWallet
-                            proxyWalletAddress={proxyWalletAddress}
-                            onFundingComplete={() => refreshUsdcBalance()}
-                            onBalanceUpdate={() => refreshUsdcBalance()}
-                        />
+                {/* Gas Sponsorship Notice */}
+                <div className="bg-green-900/20 border border-green-700/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-green-400">⛽</span>
+                        <span className="text-sm text-green-400">Gas fees are sponsored by Privy</span>
                     </div>
-                )}
+                </div>
 
                 {/* Error Display */}
                 {error && (
@@ -253,4 +211,4 @@ export function ProxyWallet({ showFunding = true, compact = false }: ProxyWallet
     );
 }
 
-export default ProxyWallet;
+export default WalletCard;

@@ -3,23 +3,16 @@
  * 
  * Handles USDC approval for Polymarket exchange.
  * Uses Privy's gas sponsorship for transaction fees.
+ * Works directly with EOA wallet (no proxy wallet).
  */
 
 'use client';
 
 import { useState, useCallback } from 'react';
-import { usePrivy, useWallets, useSendTransaction, useSignTypedData } from '@privy-io/react-auth';
+import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
 import { ethers, Interface } from 'ethers';
-import { getProxyWalletService } from '@/lib/wallet/proxyWallet';
-import {
-    SAFE_EXEC_ABI,
-    buildSafeTransaction,
-    buildSafeTypedData,
-    encodeSafeExecTransaction,
-    signTypedDataV4,
-} from '@/lib/wallet/safeTransaction';
 
-// USDC contract on Polygon
+// USDC contract on Polygon (Bridged USDC.e - used by Polymarket)
 const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 
 // Polymarket CTF Exchange contract
@@ -48,7 +41,6 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
     const { authenticated } = usePrivy();
     const { wallets } = useWallets();
     const { sendTransaction } = useSendTransaction();
-    const { signTypedData } = useSignTypedData();
     const [isApproving, setIsApproving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [txHash, setTxHash] = useState<string | null>(null);
@@ -85,6 +77,7 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
 
     /**
      * Approve USDC for Polymarket exchange with Privy gas sponsorship
+     * Works directly with EOA wallet (no proxy wallet needed)
      */
     const approveUSDC = useCallback(async (): Promise<boolean> => {
         if (!authenticated) {
@@ -111,56 +104,19 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
             }
 
             const ownerAddress = embeddedWallet.address;
-            const walletProvider = await embeddedWallet.getEthereumProvider();
 
-            const proxyService = getProxyWalletService();
-            const proxyWalletAddress =
-                proxyService.getProxyWallet(ownerAddress) ??
-                await proxyService.checkAndRecoverWallet(ownerAddress);
-
-            if (!proxyWalletAddress) {
-                throw new Error('No proxy wallet found. Create a proxy wallet first.');
-            }
-
-            // Encode the approve function call (executed by the Safe)
+            // Encode the approve function call
             const iface = new Interface(ERC20_ABI);
             const callData = iface.encodeFunctionData('approve', [
                 POLYMARKET_EXCHANGE,
                 MAX_UINT256,
             ]);
 
-            const rpcUrl = process.env.NEXT_PUBLIC_POLYGON_RPC_URL || 'https://polygon-rpc.com';
-            const publicProvider = new ethers.JsonRpcProvider(rpcUrl);
-
-            const safeContract = new ethers.Contract(proxyWalletAddress, SAFE_EXEC_ABI, publicProvider);
-            const nonce = await safeContract.nonce();
-
-            const safeTx = buildSafeTransaction({
-                to: USDC_ADDRESS,
-                data: callData,
-                nonce,
-            });
-
-            const typedData = buildSafeTypedData(137, proxyWalletAddress, safeTx);
-            let signature: string;
-            try {
-                const result = await signTypedData(typedData, {
-                    address: ownerAddress,
-                    uiOptions: { showWalletUIs: false },
-                });
-                signature = result.signature;
-            } catch (signError) {
-                console.warn('Privy signTypedData failed, falling back to provider request:', signError);
-                signature = await signTypedDataV4(walletProvider, ownerAddress, typedData);
-            }
-
-            const execData = encodeSafeExecTransaction(safeTx, signature);
-
-            // Send transaction using Privy's gas sponsorship
+            // Send transaction directly to USDC contract using Privy's gas sponsorship
             const txResult = await sendTransaction(
                 {
-                    to: proxyWalletAddress,
-                    data: execData,
+                    to: USDC_ADDRESS,
+                    data: callData,
                     chainId: 137, // Polygon Mainnet
                 },
                 {
@@ -175,6 +131,7 @@ export function useApproveUSDC(): UseApproveUSDCReturn {
 
             // Wait for confirmation using public RPC
             console.log('Waiting for confirmation...');
+            const rpcUrl = process.env.NEXT_PUBLIC_POLYGON_RPC_URL || 'https://polygon-rpc.com';
             const provider = new ethers.JsonRpcProvider(rpcUrl);
 
             let receipt = null;

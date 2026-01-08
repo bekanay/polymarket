@@ -1,12 +1,17 @@
 /**
  * Wallet utilities exports
- * Provides proxy wallet management using Gnosis Safe
+ * Provides Safe transaction utilities for wallet management
  */
 
 export {
-    ProxyWalletService,
-    getProxyWalletService,
-    resetProxyWalletService,
-    type ProxyWalletResult,
-    type SafeInfo,
-} from './proxyWallet';
+    SAFE_TX_TYPES,
+    SAFE_TX_EIP712_TYPES,
+    SAFE_EXEC_ABI,
+    type SafeTransaction,
+    buildSafeTransaction,
+    getSafeTxHash,
+    buildSafeTypedData,
+    signTypedDataV4,
+    signSafeTransaction,
+    encodeSafeExecTransaction,
+} from './safeTransaction';
