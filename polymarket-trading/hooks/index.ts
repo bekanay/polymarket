@@ -3,6 +3,7 @@
  */
 
 export { useWallet } from './useWallet';
+export { useProxyWallet } from './useProxyWallet';
 export { useMarkets } from './useMarkets';
 export { useOrderBook } from './useOrderBook';
 export { useUserOrders } from './useUserOrders';

@@ -1,6 +1,6 @@
 /**
  * Wallet utilities exports
- * Provides Safe transaction utilities for wallet management
+ * Provides Safe transaction and deployment utilities for wallet management
  */
 
 export {
@@ -15,3 +15,15 @@ export {
     signSafeTransaction,
     encodeSafeExecTransaction,
 } from './safeTransaction';
+
+export {
+    SAFE_CONSTANTS,
+    type DeploySafeParams,
+    type DeploySafeResult,
+    encodeSetupCalldata,
+    encodeCreateProxyWithNonce,
+    computeSafeAddress,
+    deploySafeWithPrivy,
+    deterministicSaltNonce,
+    getSafeAddressIfDeployed,
+} from './safeDeployment';

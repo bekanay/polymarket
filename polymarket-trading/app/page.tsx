@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { LoginButton, WalletInfo, DisconnectButton, WalletCard } from '@/components/wallet';
+import { LoginButton, WalletInfo, DisconnectButton, WalletCard, ProxyWalletCard } from '@/components/wallet';
 import { MarketList } from '@/components/markets';
 import { usePrivy } from '@privy-io/react-auth';
 import type { SimplifiedMarket } from '@/lib/polymarket';
@@ -118,6 +118,7 @@ export default function Home() {
             {/* Left: Wallet Section */}
             <div className="lg:col-span-1 space-y-6">
               <WalletCard />
+              <ProxyWalletCard />
               <SelectedMarketInfo market={selectedMarket} />
             </div>
 
