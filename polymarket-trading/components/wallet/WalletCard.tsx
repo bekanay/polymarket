@@ -1,8 +1,10 @@
 /**
  * WalletCard Component
  * 
- * Displays EOA wallet (embedded Privy wallet) status and balances.
- * Includes funding options via Privy's built-in on-ramp.
+ * Displays user's wallet status and balances.
+ * Detects wallet type and shows appropriate UI:
+ * - MetaMask → shows MetaMask wallet
+ * - Email/Google → shows embedded Privy wallet
  */
 
 'use client';
@@ -27,13 +29,15 @@ export function WalletCard({ compact = false }: WalletCardProps) {
         balance,
         usdcBalance,
         hasWallet,
+        isEmbeddedWallet,
+        walletType,
         refreshBalance,
         refreshUsdcBalance,
     } = useWallet();
 
     const [isRefreshing, setIsRefreshing] = useState(false);
 
-    // Get the embedded wallet
+    // Get the embedded wallet (for funding only)
     const embeddedWallet = wallets.find(
         wallet => wallet.walletClientType === 'privy'
     );
@@ -82,12 +86,16 @@ export function WalletCard({ compact = false }: WalletCardProps) {
                         </div>
                     </div>
                     <p className="text-sm text-gray-400">
-                        Please log in with email or Google to create an embedded wallet.
+                        Please log in with email, Google, or connect your wallet.
                     </p>
                 </div>
             </div>
         );
     }
+
+    // Determine wallet display info
+    const walletLabel = isEmbeddedWallet ? 'Privy Embedded' : 'MetaMask';
+    const walletIcon = isEmbeddedWallet ? '🔐' : '🦊';
 
     // Has wallet - show wallet info
     return (
@@ -96,12 +104,12 @@ export function WalletCard({ compact = false }: WalletCardProps) {
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
-                            <span className="text-xl">✓</span>
+                        <div className={`w-10 h-10 bg-gradient-to-br ${isEmbeddedWallet ? 'from-green-500 to-emerald-600' : 'from-orange-500 to-amber-600'} rounded-lg flex items-center justify-center`}>
+                            <span className="text-xl">{walletIcon}</span>
                         </div>
                         <div>
                             <h3 className="text-white font-semibold">Trading Wallet</h3>
-                            <p className="text-sm text-gray-400">Privy Embedded</p>
+                            <p className="text-sm text-gray-400">{walletLabel}</p>
                         </div>
                     </div>
                     <button
@@ -161,8 +169,8 @@ export function WalletCard({ compact = false }: WalletCardProps) {
                     </div>
                 </div>
 
-                {/* Fund Wallet Button */}
-                {embeddedWallet && (
+                {/* Fund Wallet Button - only for embedded wallets */}
+                {isEmbeddedWallet && embeddedWallet && (
                     <div className="flex gap-2">
                         <button
                             onClick={() => fundWallet({
@@ -192,13 +200,35 @@ export function WalletCard({ compact = false }: WalletCardProps) {
                     </div>
                 )}
 
+                {/* External wallet - just show copy button */}
+                {!isEmbeddedWallet && (
+                    <button
+                        onClick={() => copyToClipboard(walletAddress)}
+                        className="w-full py-3 px-4 bg-gray-700/50 hover:bg-gray-700 text-white 
+                                   rounded-lg transition-colors flex items-center justify-center gap-2"
+                        title="Copy address to receive crypto"
+                    >
+                        <span>📋</span>
+                        Copy Address
+                    </button>
+                )}
+
                 {/* Gas Sponsorship Notice */}
-                <div className="bg-green-900/20 border border-green-700/30 rounded-lg p-3">
-                    <div className="flex items-center gap-2">
-                        <span className="text-green-400">⛽</span>
-                        <span className="text-sm text-green-400">Gas fees are sponsored by Privy</span>
+                {isEmbeddedWallet ? (
+                    <div className="bg-green-900/20 border border-green-700/30 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-green-400">⛽</span>
+                            <span className="text-sm text-green-400">Gas fees are sponsored by Privy</span>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    <div className="bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-yellow-400">⚠️</span>
+                            <span className="text-sm text-yellow-400">External wallet - you pay gas fees</span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Error Display */}
                 {error && (
