@@ -429,6 +429,20 @@ export class PolymarketService {
                     liquidity: market.liquidity ?? 0,
                     priceChange24hr: priceChange,
                 };
+            }).filter((market: SimplifiedMarket) => {
+                // Filter out markets that have already ended
+                if (market.end_date_iso) {
+                    const endDate = new Date(market.end_date_iso);
+                    const now = new Date();
+                    if (endDate < now) {
+                        return false; // Exclude ended markets
+                    }
+                }
+                // Also filter out closed or inactive markets
+                if (market.closed || !market.active) {
+                    return false;
+                }
+                return true;
             });
 
             return {
