@@ -9,3 +9,4 @@ export { useOrderBook } from './useOrderBook';
 export { useUserOrders } from './useUserOrders';
 export { useApproveCTF } from './useApproveCTF';
 export { useWebSocket } from './useWebSocket';
+export { useDeploySafe } from './useDeploySafe';

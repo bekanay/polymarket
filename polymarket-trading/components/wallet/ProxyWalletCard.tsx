@@ -2,36 +2,39 @@
  * ProxyWalletCard Component
  *
  * Displays and manages the user's Polymarket proxy wallet (Gnosis Safe).
- * Allows users to create a new proxy wallet with gas-sponsored transactions.
+ * Uses Polymarket's Builder Relayer for gasless Safe deployment.
  * Supports funding the proxy wallet with USDC.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useProxyWallet } from '@/hooks/useProxyWallet';
+import { useDeploySafe } from '@/hooks/useDeploySafe';
 import { useFundProxyWallet } from '@/hooks/useFundProxyWallet';
 import { useWallet } from '@/hooks/useWallet';
+import { ethers } from 'ethers';
 
 interface ProxyWalletCardProps {
     compact?: boolean;
 }
+
+// USDC contract on Polygon
+const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 export function ProxyWalletCard({ compact = false }: ProxyWalletCardProps) {
     const { authenticated, ready } = usePrivy();
     const {
         safeAddress,
         isDeployed,
-        isLoading,
         isDeploying,
+        isLoading: isSafeLoading,
         error,
-        balance,
-        usdcBalance,
-        txHash,
-        deployProxyWallet,
-        refreshBalances,
-    } = useProxyWallet();
+        transactionHash: txHash,
+        deploySafe,
+        reset: resetDeployment,
+    } = useDeploySafe();
 
     const { usdcBalance: walletUsdcBalance } = useWallet();
     const {
@@ -44,16 +47,67 @@ export function ProxyWalletCard({ compact = false }: ProxyWalletCardProps) {
         isExternalWallet,
     } = useFundProxyWallet();
 
+    const [isBalanceLoading, setIsBalanceLoading] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showFundModal, setShowFundModal] = useState(false);
     const [fundAmount, setFundAmount] = useState('');
+    const [balance, setBalance] = useState<string | null>(null);
+    const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
+
+    // Combined loading state
+    const isLoading = isSafeLoading || isBalanceLoading;
+
+    // Format balance from wei to human-readable format
+    const formatBalance = (weiBalance: string, decimals: number = 18): string => {
+        try {
+            const value = BigInt(weiBalance);
+            const divisor = BigInt(10 ** decimals);
+            const wholePart = value / divisor;
+            const fractionalPart = value % divisor;
+            const fractionalStr = fractionalPart.toString().padStart(decimals, '0').slice(0, 4);
+            return `${wholePart}.${fractionalStr}`;
+        } catch {
+            return '0.0000';
+        }
+    };
+
+    // Fetch balances for the Safe
+    const fetchBalances = useCallback(async (address: string) => {
+        try {
+            const provider = new ethers.JsonRpcProvider(
+                process.env.NEXT_PUBLIC_POLYGON_RPC_URL || 'https://polygon-rpc.com'
+            );
+
+            const [nativeBalance, usdcContract] = await Promise.all([
+                provider.getBalance(address),
+                new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider),
+            ]);
+
+            const usdcBal = await usdcContract.balanceOf(address);
+
+            setBalance(formatBalance(nativeBalance.toString(), 18));
+            setUsdcBalance(formatBalance(usdcBal.toString(), 6));
+        } catch (error) {
+            console.error('Error fetching Safe balances:', error);
+            setBalance('0.0000');
+            setUsdcBalance('0.0000');
+        }
+    }, []);
+
+    // Refresh balances when Safe address changes
+    useEffect(() => {
+        if (safeAddress) {
+            setIsBalanceLoading(true);
+            fetchBalances(safeAddress).finally(() => setIsBalanceLoading(false));
+        }
+    }, [safeAddress, fetchBalances]);
 
     // Refresh balances after successful funding
     useEffect(() => {
-        if (fundSuccess) {
-            refreshBalances();
+        if (fundSuccess && safeAddress) {
+            fetchBalances(safeAddress);
         }
-    }, [fundSuccess, refreshBalances]);
+    }, [fundSuccess, safeAddress, fetchBalances]);
 
     // Don't render if not authenticated
     if (!ready || !authenticated) {
@@ -62,8 +116,9 @@ export function ProxyWalletCard({ compact = false }: ProxyWalletCardProps) {
 
     // Handle balance refresh
     const handleRefresh = async () => {
+        if (!safeAddress) return;
         setIsRefreshing(true);
-        await refreshBalances();
+        await fetchBalances(safeAddress);
         setIsRefreshing(false);
     };
 
@@ -141,7 +196,7 @@ export function ProxyWalletCard({ compact = false }: ProxyWalletCardProps) {
 
                     {/* Create Button */}
                     <button
-                        onClick={deployProxyWallet}
+                        onClick={deploySafe}
                         disabled={isDeploying}
                         className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-indigo-600
                                    hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-600
@@ -151,12 +206,12 @@ export function ProxyWalletCard({ compact = false }: ProxyWalletCardProps) {
                         {isDeploying ? (
                             <>
                                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Creating Proxy Wallet...
+                                Creating Gnosis Safe...
                             </>
                         ) : (
                             <>
                                 <span>🚀</span>
-                                Create Proxy Wallet
+                                Create Gnosis Safe
                             </>
                         )}
                     </button>
@@ -166,7 +221,7 @@ export function ProxyWalletCard({ compact = false }: ProxyWalletCardProps) {
                         <div className="flex items-center gap-2">
                             <span className="text-green-400">⛽</span>
                             <span className="text-sm text-green-400">
-                                Creation is free - gas sponsored by Privy
+                                Creation is free - gas sponsored by Polymarket
                             </span>
                         </div>
                     </div>
